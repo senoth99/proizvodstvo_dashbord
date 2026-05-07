@@ -9,14 +9,23 @@ export interface ProductionItemLike {
   qty: number;
 }
 
-export interface PlannedConsumableLine {
+/** Строка плана на карточке: учёт всей очереди (фронт, без записи на сервер). */
+export interface ConsumableDisplayLine {
   consumableId: string;
   name: string;
   unit: string;
-  required: number;
+  /** Сколько уйдёт на эту карточку (группу) */
+  requiredGroup: number;
+  /** Сколько уйдёт по всей очереди «На производство» */
+  demandTotal: number;
+  /** Фактический остаток на складе */
   stock: number;
-  balanceAfter: number;
+  /** Остаток после вычета всей очереди: stock − demandTotal */
+  afterQueue: number;
+  /** Не хватает на всю очередь, max(0, demandTotal − stock) */
   shortage: number;
+  /** Остаток после очереди > 0, но низкий — «скоро закончится» */
+  warnSoon: boolean;
 }
 
 function demandForItems(
@@ -40,30 +49,50 @@ function demandForItems(
   return demand;
 }
 
-export function planConsumablesForItems(
-  productionItems: ProductionItemLike[],
+/**
+ * План расходников для одной карточки: потребность группы + глобально по очереди.
+ * `afterQueue` / `shortage` / `warnSoon` считаются от суммарной потребности всей очереди.
+ */
+export function buildConsumableLinesForGroup(
+  groupItems: ProductionItemLike[],
+  allQueueItems: ProductionItemLike[],
   catalogConsumableBoms: Record<string, ConsumableBomLine[]>,
   consumables: Consumable[]
-): PlannedConsumableLine[] {
-  const demand = demandForItems(productionItems, catalogConsumableBoms);
+): ConsumableDisplayLine[] {
+  const globalMap = demandForItems(allQueueItems, catalogConsumableBoms);
+  const groupMap = demandForItems(groupItems, catalogConsumableBoms);
   const byId = new Map(consumables.map((c) => [c.id, c]));
-  const rows: PlannedConsumableLine[] = [];
-  for (const [consumableId, required] of demand) {
+  const rows: ConsumableDisplayLine[] = [];
+
+  for (const [consumableId, requiredGroup] of groupMap) {
     const c = byId.get(consumableId);
     if (!c) continue;
+    const demandTotal = globalMap.get(consumableId) ?? requiredGroup;
     const stock = Number(c.stock) || 0;
-    const balanceAfter = stock - required;
-    const shortage = balanceAfter < 0 ? -balanceAfter : 0;
+    const afterQueue = stock - demandTotal;
+    const shortage = afterQueue < 0 ? -afterQueue : 0;
+    const minStock = Number(c.minStock) || 0;
+    const warnSoon =
+      shortage === 0 &&
+      afterQueue > 0 &&
+      ((minStock > 0 && afterQueue <= minStock) ||
+        (minStock <= 0 &&
+          stock > 0 &&
+          afterQueue / stock <= 0.15));
+
     rows.push({
       consumableId,
       name: c.name,
       unit: c.unit,
-      required,
+      requiredGroup,
+      demandTotal,
       stock,
-      balanceAfter,
+      afterQueue,
       shortage,
+      warnSoon,
     });
   }
+
   rows.sort((a, b) => a.name.localeCompare(b.name, "ru"));
   return rows;
 }

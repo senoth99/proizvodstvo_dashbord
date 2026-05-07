@@ -5,8 +5,8 @@ import type { ProductionItem } from "@/lib/server/store";
 import { lineUrgentQty } from "@/lib/urgentDisplay";
 import type { Consumable, ConsumableBomLine } from "@/lib/types";
 import {
-  planConsumablesForItems,
-  type PlannedConsumableLine,
+  buildConsumableLinesForGroup,
+  type ConsumableDisplayLine,
 } from "@/lib/consumablePlan";
 import { useStore } from "@/lib/store";
 import { Empty, Input, Segmented } from "./ui";
@@ -71,7 +71,7 @@ interface Group {
   urgentQty: number;
   ids: string[];
   sizes: SizeBucket[];
-  consumablePlan: PlannedConsumableLine[];
+  consumablePlan: ConsumableDisplayLine[];
   consumableShortage: boolean;
 }
 
@@ -131,8 +131,9 @@ function attachConsumablePlans(
     const subset = g.ids
       .map((id) => byId.get(id))
       .filter((i): i is ProductionItem => !!i);
-    const plan = planConsumablesForItems(
+    const plan = buildConsumableLinesForGroup(
       subset,
+      items,
       catalogConsumableBoms,
       consumables
     );
@@ -324,14 +325,21 @@ export function ProductionTab() {
             норму: сколько расходника уходит на одну штуку изделия.
           </p>
           <p>
-            Когда позиция попадает в очередь «На производство», под карточкой
-            показывается расчёт: сколько всего нужно расходника на эту очередь,
-            сколько есть на складе и какой будет остаток после списания.
+            Очередь «На производство» суммируется по всем карточкам: остаток после
+            очереди для каждого расходника считается как склад минус потребность
+            по <strong className="font-medium">всей</strong> очереди сразу (только
+            отображение, склад на сервере не меняется).
           </p>
           <p>
-            Синяя рамка вокруг карточки значит, что для изделия заданы нормы
-            расходников. Метка «НЕХВАТАЕТ» (синим) — если после списания остаток
-            ушёл бы в минус; рядом указано, не хватает какого количества.
+            Под карточкой: сколько уйдёт на эту позицию и сколько уйдёт по всей
+            очереди; «после очереди» — прогноз остатка после выполнения всей
+            текущей очереди.
+          </p>
+          <p>
+            Синяя рамка — заданы нормы расходников. «НЕХВАТАЕТ» — после всей
+            очереди не хватило бы склада. Иконка карандаша — остаток после очереди
+            ещё есть, но мало (минимум из карточки расходника или ≤15% от текущего
+            склада).
           </p>
           <p>
             При «Оприходовать товар» на главной расходники списываются так же,
@@ -344,14 +352,36 @@ export function ProductionTab() {
   );
 }
 
+function PencilSoonIcon({ title }: { title: string }) {
+  return (
+    <span title={title} className="inline-flex shrink-0 text-sky-400" aria-hidden>
+      <svg
+        width="12"
+        height="12"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="opacity-95"
+      >
+        <path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+      </svg>
+    </span>
+  );
+}
+
 function ConsumablePlanPanel({
   plan,
   urgent,
 }: {
-  plan: PlannedConsumableLine[];
+  plan: ConsumableDisplayLine[];
   urgent: boolean;
 }) {
   if (!plan.length) return null;
+  const anyShortage = plan.some((p) => p.shortage > 0);
+  const anySoon = plan.some((p) => p.warnSoon);
   return (
     <div
       className={
@@ -361,11 +391,19 @@ function ConsumablePlanPanel({
           : "border-sky-500/45 bg-sky-950/40")
       }
     >
-      {plan.some((p) => p.shortage > 0) && (
-        <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-sky-300">
-          НЕХВАТАЕТ
-        </div>
-      )}
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+        {anyShortage && (
+          <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-sky-300">
+            НЕХВАТАЕТ
+          </div>
+        )}
+        {anySoon && !anyShortage && (
+          <div className="flex items-center gap-1 text-[10px] font-light uppercase tracking-[0.16em] text-sky-400/95">
+            <PencilSoonIcon title="После всей очереди останется мало" />
+            <span>скоро мало</span>
+          </div>
+        )}
+      </div>
       <ul className="space-y-1.5">
         {plan.map((row) => (
           <li
@@ -375,23 +413,32 @@ function ConsumablePlanPanel({
               (row.shortage > 0 ? "text-sky-200" : "text-sky-100/90")
             }
           >
-            <span className="font-medium text-sky-100/95">{row.name}</span>
-            {": нужно "}
-            <span className="tabular-nums">
-              {fmtNumber(row.required)} {row.unit}
+            <span className="font-medium text-sky-100/95 inline-flex items-center gap-1">
+              {row.name}
+              {row.warnSoon && row.shortage <= 0 && (
+                <PencilSoonIcon title="Мало после всей очереди" />
+              )}
             </span>
-            {" · на складе "}
+            {": на карточке "}
+            <span className="tabular-nums">
+              {fmtNumber(row.requiredGroup)} {row.unit}
+            </span>
+            {" · вся очередь "}
+            <span className="tabular-nums">
+              {fmtNumber(row.demandTotal)} {row.unit}
+            </span>
+            {" · склад "}
             <span className="tabular-nums">
               {fmtNumber(row.stock)} {row.unit}
             </span>
-            {" · после списания "}
+            {" · после очереди "}
             <span
               className={
                 "tabular-nums " +
-                (row.balanceAfter < 0 ? "text-sky-300 font-medium" : "")
+                (row.afterQueue < 0 ? "text-sky-300 font-medium" : "")
               }
             >
-              {fmtNumber(row.balanceAfter)} {row.unit}
+              {fmtNumber(row.afterQueue)} {row.unit}
             </span>
             {row.shortage > 0 && (
               <span className="text-sky-300">

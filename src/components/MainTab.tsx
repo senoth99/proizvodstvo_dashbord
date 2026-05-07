@@ -5,7 +5,7 @@ import { useStore } from "@/lib/store";
 import type { Material } from "@/lib/types";
 import type { ProductionItem } from "@/lib/server/store";
 import { lineUrgentQty } from "@/lib/urgentDisplay";
-import { planConsumablesForItems } from "@/lib/consumablePlan";
+import { buildConsumableLinesForGroup } from "@/lib/consumablePlan";
 import { fmtNumber } from "@/lib/format";
 import { Button, Empty, Input, Modal } from "./ui";
 
@@ -49,6 +49,7 @@ interface ProdGroup {
   urgentQty: number;
   consumableShortage: boolean;
   hasConsumablePlan: boolean;
+  consumableWarnSoon: boolean;
 }
 
 function groupProduction(items: ProductionItem[]): ProdGroup[] {
@@ -65,6 +66,7 @@ function groupProduction(items: ProductionItem[]): ProdGroup[] {
         urgentQty: 0,
         consumableShortage: false,
         hasConsumablePlan: false,
+        consumableWarnSoon: false,
       };
       map.set(key, g);
     }
@@ -117,8 +119,9 @@ export function MainTab() {
           (it.matchedSlug || normalizeKey(it.matchedName ?? it.name) || it.id) ===
           g.key
       );
-      const plan = planConsumablesForItems(
+      const plan = buildConsumableLinesForGroup(
         subset,
+        prod.items,
         catalogConsumableBoms,
         consumables
       );
@@ -126,6 +129,9 @@ export function MainTab() {
         ...g,
         consumableShortage: plan.some((p) => p.shortage > 0),
         hasConsumablePlan: plan.length > 0,
+        consumableWarnSoon: plan.some(
+          (p) => p.warnSoon && p.shortage <= 0
+        ),
       };
     });
   }, [prod.items, catalogConsumableBoms, consumables]);
@@ -216,16 +222,20 @@ export function MainTab() {
               `${fmtNumber(g.qty, 0)} шт` +
               (g.consumableShortage
                 ? " · НЕХВАТАЕТ расходников"
-                : g.hasConsumablePlan
-                  ? " · расходники"
-                  : ""),
+                : g.consumableWarnSoon
+                  ? " · после очереди мало ✎"
+                  : g.hasConsumablePlan
+                    ? " · расходники"
+                    : ""),
             color: g.consumableShortage
               ? "#38bdf8"
-              : g.hasConsumablePlan
-                ? "#0ea5e9"
-                : g.urgentQty > 0
-                  ? RED
-                  : ACCENT,
+              : g.consumableWarnSoon
+                ? "#38bdf8"
+                : g.hasConsumablePlan
+                  ? "#0ea5e9"
+                  : g.urgentQty > 0
+                    ? RED
+                    : ACCENT,
           }))}
         />
       </DashboardSection>
