@@ -108,6 +108,9 @@ else
 fi
 
 mkdir -p .data
+# Контейнер работает под uid/gid 1001 (nextjs). Чтобы он мог
+# писать в .data при bind-mount — синхронизируем владельца.
+chown -R 1001:1001 .data 2>/dev/null || true
 
 bold "▶ Собираю и запускаю стек"
 hr

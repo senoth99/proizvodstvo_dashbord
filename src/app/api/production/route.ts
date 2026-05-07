@@ -103,8 +103,14 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  const result = await ingest(enriched, { replace: true });
-  return json({ ok: true, ...result });
+  try {
+    const result = await ingest(enriched, { replace: true });
+    return json({ ok: true, ...result });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("[/api/production POST] ingest failed:", e);
+    return json({ ok: false, error: msg }, { status: 500 });
+  }
 }
 
 export async function DELETE() {
