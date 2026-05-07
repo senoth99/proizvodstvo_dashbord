@@ -17,11 +17,11 @@ green() { printf '\033[1;32m%s\033[0m\n' "$*"; }
 red()   { printf '\033[1;31m%s\033[0m\n' "$*" >&2; }
 hr()    { printf '%s\n' "──────────────────────────────────────────────────────────────"; }
 
-# ── auto-detect: server (linux + docker + наш IP на интерфейсе) ───
+# ── auto-detect: server, если IP на интерфейсе совпадает ──────────
 if [[ "$MODE" == "auto" ]]; then
-  if [[ "$(uname -s)" == "Linux" ]] && command -v docker >/dev/null 2>&1; then
-    if (command -v ip  >/dev/null 2>&1 && ip -4 addr show 2>/dev/null | grep -q "$SERVER_IP") \
-    || (command -v hostname >/dev/null 2>&1 && hostname -I 2>/dev/null | grep -q "$SERVER_IP"); then
+  if [[ "$(uname -s)" == "Linux" ]]; then
+    if (command -v ip  >/dev/null 2>&1 && ip -4 addr show 2>/dev/null | grep -qw "$SERVER_IP") \
+    || (command -v hostname >/dev/null 2>&1 && hostname -I 2>/dev/null | grep -qw "$SERVER_IP"); then
       MODE="server"
     fi
   fi
@@ -89,12 +89,21 @@ fi
 # SERVER MODE — собирает и запускает стек на этой машине
 # ════════════════════════════════════════════════════════════════
 
+# ── ставим docker, если отсутствует ───────────────────────────────
+if ! command -v docker >/dev/null 2>&1; then
+  bold "▶ Docker не найден — ставлю официальный скрипт get.docker.com"
+  hr
+  curl -fsSL https://get.docker.com | sh
+  systemctl enable --now docker 2>/dev/null || true
+fi
+
 if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
   DC="docker compose"
 elif command -v docker-compose >/dev/null 2>&1; then
   DC="docker-compose"
 else
-  red "Не найден docker / docker compose. Поставьте Docker и повторите."
+  red "Не найден docker / docker compose даже после установки."
+  red "Поставьте вручную:  curl -fsSL https://get.docker.com | sh"
   exit 1
 fi
 
