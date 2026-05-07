@@ -1,4 +1,4 @@
-import { productionBomKey } from "@/lib/bomKey";
+import { normalizeBomKey } from "@/lib/bomKey";
 import type { Consumable, ConsumableBomLine } from "@/lib/types";
 
 /** Поля очереди производства, нужные для расчёта расходников */
@@ -28,14 +28,40 @@ export interface ConsumableDisplayLine {
   warnSoon: boolean;
 }
 
+/**
+ * Нормы расходников в настройках хранятся по slug или по нормализованному имени
+ * (как в каталоге). На производстве у позиции часто есть slug из API — если
+ * BOM заведён только по имени, без этого поиска синие статусы не появятся.
+ */
+function consumableBomForItem(
+  it: ProductionItemLike,
+  catalogConsumableBoms: Record<string, ConsumableBomLine[]>
+): ConsumableBomLine[] | null {
+  const slug = it.matchedSlug?.toString().trim();
+  if (slug) {
+    const a = catalogConsumableBoms[slug];
+    if (a?.length) return a;
+  }
+  const k1 = normalizeBomKey(it.matchedName ?? it.name);
+  if (k1) {
+    const a = catalogConsumableBoms[k1];
+    if (a?.length) return a;
+  }
+  const k2 = normalizeBomKey(it.name);
+  if (k2 && k2 !== k1) {
+    const a = catalogConsumableBoms[k2];
+    if (a?.length) return a;
+  }
+  return null;
+}
+
 function demandForItems(
   productionItems: ProductionItemLike[],
   catalogConsumableBoms: Record<string, ConsumableBomLine[]>
 ): Map<string, number> {
   const demand = new Map<string, number>();
   for (const it of productionItems) {
-    const k = productionBomKey(it);
-    const lines = catalogConsumableBoms[k];
+    const lines = consumableBomForItem(it, catalogConsumableBoms);
     if (!lines?.length) continue;
     const units = Number(it.qty) || 0;
     if (units <= 0) continue;
@@ -95,4 +121,12 @@ export function buildConsumableLinesForGroup(
 
   rows.sort((a, b) => a.name.localeCompare(b.name, "ru"));
   return rows;
+}
+
+/** Суммарная потребность по расходникам на всю очередь (для главной и т.п.). */
+export function totalConsumableDemand(
+  productionItems: ProductionItemLike[],
+  catalogConsumableBoms: Record<string, ConsumableBomLine[]>
+): Map<string, number> {
+  return demandForItems(productionItems, catalogConsumableBoms);
 }

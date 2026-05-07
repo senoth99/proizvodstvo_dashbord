@@ -5,7 +5,7 @@ import { useStore } from "@/lib/store";
 import type { Material } from "@/lib/types";
 import type { ProductionItem } from "@/lib/server/store";
 import { lineUrgentQty } from "@/lib/urgentDisplay";
-import { buildConsumableLinesForGroup } from "@/lib/consumablePlan";
+import { buildConsumableLinesForGroup, totalConsumableDemand } from "@/lib/consumablePlan";
 import { fmtNumber } from "@/lib/format";
 import { Button, Empty, Input, Modal } from "./ui";
 
@@ -135,6 +135,56 @@ export function MainTab() {
       };
     });
   }, [prod.items, catalogConsumableBoms, consumables]);
+  const consumableDemand = useMemo(
+    () => totalConsumableDemand(prod.items, catalogConsumableBoms),
+    [prod.items, catalogConsumableBoms]
+  );
+
+  const consumableRows = useMemo(() => {
+    return consumables.map((c) => {
+      const demand = consumableDemand.get(c.id) ?? 0;
+      const stock = Number(c.stock) || 0;
+      const min = Number(c.minStock) || 0;
+      const after = stock - demand;
+      const shortage = after < 0 ? -after : 0;
+      const warnSoon =
+        shortage === 0 &&
+        after > 0 &&
+        ((min > 0 && after <= min) ||
+          (min <= 0 && stock > 0 && after / stock <= 0.15));
+      const hasDemand = demand > 0;
+      return {
+        key: c.id,
+        label: c.name,
+        value: stock,
+        max: Math.max(stock, demand, min, 1),
+        meta: hasDemand
+          ? `склад ${fmtNumber(stock)} ${c.unit} · очередь ${fmtNumber(demand)} · после ${fmtNumber(after)}${
+              shortage > 0
+                ? ` · не хватает ${fmtNumber(shortage)}`
+                : warnSoon
+                  ? " · мало ✎"
+                  : ""
+            }`
+          : `${fmtNumber(stock)} ${c.unit}${
+              min > 0 ? ` / мин ${fmtNumber(min)}` : ""
+            }`,
+        color: !hasDemand
+          ? ACCENT
+          : shortage > 0
+            ? "#38bdf8"
+            : warnSoon
+              ? "#38bdf8"
+              : "#0ea5e9",
+        marker: hasDemand
+          ? demand
+          : min > 0
+            ? min
+            : null,
+      };
+    });
+  }, [consumables, consumableDemand]);
+
   const stats = useMemo(() => {
     let lowStock = 0;
     let runningOut = 0;
@@ -184,8 +234,8 @@ export function MainTab() {
       />
 
       <DashboardSection
-        title="Остатки на складе"
-        empty="Расходников ещё нет."
+        title="Материалы (себестоимость)"
+        empty="Материалов пока нет — добавьте в Настройки → Материалы."
         rows={materials.length}
       >
         <BarChart
@@ -205,6 +255,14 @@ export function MainTab() {
             };
           })}
         />
+      </DashboardSection>
+
+      <DashboardSection
+        title="Расходники (прогноз по очереди)"
+        empty="Расходников нет в справочнике — Настройки → Расходники. Синие полосы: учёт всей очереди «На производство» и норм в карточке изделия."
+        rows={consumables.length}
+      >
+        <BarChart rows={consumableRows} />
       </DashboardSection>
 
       <DashboardSection
