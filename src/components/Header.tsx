@@ -19,13 +19,9 @@ export function Header({ view, setView }: Props) {
       <div className="max-w-6xl mx-auto px-4 sm:px-6">
         <div className="h-14 flex items-center justify-center">
           <a href="#" aria-label="На главную" className="block select-none">
-            {/*
-              Подставится GIF-анимация логотипа: положи файл в /public/logo.gif
-              и поменяй src ниже на "/logo.gif".
-            */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src="/logo.png"
+              src="/logo.gif"
               alt="Логотип"
               draggable={false}
               className="h-9 w-auto object-contain pointer-events-none"
