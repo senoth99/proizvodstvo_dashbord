@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { proxyImage } from "@/lib/img";
 import { patchItem, removeItem, type ItemPatch } from "@/lib/server/store";
 
 export const runtime = "nodejs";
@@ -42,5 +43,8 @@ export async function PATCH(
   }
   const result = await patchItem(id, body);
   if (!result) return json({ ok: false, error: "not found" }, { status: 404 });
-  return json({ ok: true, item: result });
+  return json({
+    ok: true,
+    item: { ...result, imageUrl: proxyImage(result.imageUrl ?? null) },
+  });
 }

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { fullImage } from "@/lib/match";
+import { proxyImage } from "@/lib/img";
 import { getCatalog, getCatalogMeta } from "@/lib/server/catalog";
 
 export const runtime = "nodejs";
@@ -27,7 +28,7 @@ function shape(catalog: Awaited<ReturnType<typeof getCatalog>>) {
     slug: p.slug ?? null,
     name: p.name,
     category: p.category?.name ?? null,
-    imageUrl: fullImage(p.images?.[0] ?? null),
+    imageUrl: proxyImage(fullImage(p.images?.[0] ?? null)),
   }));
 }
 

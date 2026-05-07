@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { findBestMatch } from "@/lib/match";
+import { proxyImage } from "@/lib/img";
 import { getCatalog } from "@/lib/server/catalog";
 import {
   clearAll,
   getState,
   ingest,
   type IncomingItem,
+  type ProductionItem,
 } from "@/lib/server/store";
 
 export const runtime = "nodejs";
@@ -27,9 +29,17 @@ export function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: CORS_HEADERS });
 }
 
+function shapeItem(it: ProductionItem): ProductionItem {
+  return { ...it, imageUrl: proxyImage(it.imageUrl ?? null) };
+}
+
 export async function GET() {
   const state = await getState();
-  return json({ ok: true, ...state });
+  return json({
+    ok: true,
+    ...state,
+    items: state.items.map(shapeItem),
+  });
 }
 
 interface IncomingPayload {
