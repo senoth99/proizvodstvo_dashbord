@@ -7,6 +7,9 @@ export interface ProductionItem {
   id: string;
   name: string;
   qty: number;
+  urgent?: boolean;
+  /** Сколько шт в строке считаются срочными (≤ qty), из urgentTargets. Не хранится в JSON. */
+  urgentQty?: number;
   size?: string;
   imageUrl?: string | null;
   matchedName?: string | null;
@@ -24,9 +27,10 @@ const FILE = path.join(DATA_DIR, "production.json");
 interface FileShape {
   items: ProductionItem[];
   lastPostAt: string | null;
+  urgentTargets: Record<string, number>;
 }
 
-const empty: FileShape = { items: [], lastPostAt: null };
+const empty: FileShape = { items: [], lastPostAt: null, urgentTargets: {} };
 
 const g = globalThis as unknown as { __prodLock?: Promise<void> };
 g.__prodLock ??= Promise.resolve();
@@ -45,9 +49,19 @@ async function readFile(): Promise<FileShape> {
   try {
     const raw = await fs.readFile(FILE, "utf8");
     const parsed = JSON.parse(raw) as Partial<FileShape>;
+    const urgentTargets =
+      parsed.urgentTargets && typeof parsed.urgentTargets === "object"
+        ? (parsed.urgentTargets as Record<string, number>)
+        : {};
     return {
-      items: Array.isArray(parsed.items) ? parsed.items : [],
+      items: Array.isArray(parsed.items)
+        ? parsed.items.map((it) => ({
+            ...it,
+            urgent: !!it.urgent,
+          }))
+        : [],
       lastPostAt: parsed.lastPostAt ?? null,
+      urgentTargets,
     };
   } catch {
     return { ...empty };
@@ -76,12 +90,17 @@ async function withLock<T>(fn: (state: FileShape) => Promise<T> | T): Promise<T>
 }
 
 export async function getState(): Promise<FileShape> {
-  return readFile();
+  const state = await readFile();
+  return {
+    ...state,
+    items: applyUrgent(state.items, state.urgentTargets),
+  };
 }
 
 export interface ItemPatch {
   name?: string;
   qty?: number;
+  urgent?: boolean;
   size?: string;
   notes?: string;
   imageUrl?: string | null;
@@ -92,6 +111,41 @@ export interface ItemPatch {
 
 const keyOf = (name: string, size?: string) =>
   `${(name || "").trim().toLowerCase()}::${(size || "").trim().toLowerCase()}`;
+
+const normalizeGroupKey = (s: string) =>
+  (s || "")
+    .toLowerCase()
+    .replace(/[«»"'`’]/g, "")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+
+const groupKeyOf = (it: Pick<ProductionItem, "matchedSlug" | "matchedName" | "name">) =>
+  it.matchedSlug || normalizeGroupKey(it.matchedName ?? it.name);
+
+function applyUrgent(
+  items: ProductionItem[],
+  targets: Record<string, number>
+): ProductionItem[] {
+  const remaining = new Map<string, number>();
+  for (const [k, v] of Object.entries(targets)) {
+    const cap = Number(v);
+    const gk = String(k || "").trim();
+    if (gk && Number.isFinite(cap) && cap > 0) {
+      remaining.set(gk, Math.floor(cap));
+    }
+  }
+  return items.map((it) => {
+    const gk = groupKeyOf(it);
+    const capLeft = remaining.get(gk) ?? 0;
+    if (capLeft <= 0) {
+      return { ...it, urgent: false, urgentQty: 0 };
+    }
+    const q = Math.max(0, Number(it.qty) || 0);
+    const uq = Math.min(q, capLeft);
+    remaining.set(gk, capLeft - uq);
+    return { ...it, urgent: uq > 0, urgentQty: uq };
+  });
+}
 
 export interface IncomingItem {
   name: string;
@@ -144,6 +198,7 @@ export async function ingest(
           id: randomUUID().slice(0, 12),
           name,
           qty: finalQty,
+          urgent: false,
           size,
           notes: raw.notes,
           imageUrl: raw.imageUrl ?? null,
@@ -176,6 +231,7 @@ export async function patchItem(id: string, patch: ItemPatch): Promise<Productio
         patch.qty !== undefined && Number.isFinite(Number(patch.qty)) && Number(patch.qty) >= 0
           ? Number(patch.qty)
           : cur.qty,
+      urgent: cur.urgent,
       updatedAt: new Date().toISOString(),
     };
     state.items[idx] = next;
@@ -194,5 +250,19 @@ export async function removeItem(id: string): Promise<boolean> {
 export async function clearAll(): Promise<void> {
   await withLock((state) => {
     state.items = [];
+    state.urgentTargets = {};
+  });
+}
+
+export async function setUrgentTarget(key: string, qty: number): Promise<void> {
+  await withLock((state) => {
+    const k = String(key || "").trim();
+    if (!k) return;
+    const q = Number(qty);
+    if (!Number.isFinite(q) || q <= 0) {
+      delete state.urgentTargets[k];
+      return;
+    }
+    state.urgentTargets[k] = q;
   });
 }

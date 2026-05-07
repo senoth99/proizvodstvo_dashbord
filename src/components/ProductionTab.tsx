@@ -2,11 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ProductionItem } from "@/lib/server/store";
+import { lineUrgentQty } from "@/lib/urgentDisplay";
 import { Empty, Input, Segmented } from "./ui";
 import { fmtNumber } from "@/lib/format";
 
 type Mode = "grid" | "list";
 type Sort = "qty" | "name";
+type Filter = "all" | "urgent";
 
 interface ApiState {
   items: ProductionItem[];
@@ -50,6 +52,7 @@ function normalizeKey(s: string): string {
 interface SizeBucket {
   size?: string;
   qty: number;
+  urgentQty: number;
   ids: string[];
 }
 
@@ -59,6 +62,7 @@ interface Group {
   imageUrl: string | null;
   matchedSlug: string | null;
   totalQty: number;
+  urgentQty: number;
   ids: string[];
   sizes: SizeBucket[];
 }
@@ -76,6 +80,7 @@ function groupItems(items: ProductionItem[]): Group[] {
         imageUrl: it.imageUrl ?? null,
         matchedSlug: it.matchedSlug ?? null,
         totalQty: 0,
+        urgentQty: 0,
         ids: [],
         sizes: [],
       };
@@ -86,15 +91,17 @@ function groupItems(items: ProductionItem[]): Group[] {
       g.name = it.matchedName;
     }
     g.totalQty += it.qty;
+    g.urgentQty += lineUrgentQty(it);
     g.ids.push(it.id);
     const sizeRaw = (it.size ?? "").trim();
     const sizeKey = sizeRaw || "";
     let bucket = g.sizes.find((s) => (s.size ?? "") === sizeKey);
     if (!bucket) {
-      bucket = { size: sizeRaw || undefined, qty: 0, ids: [] };
+      bucket = { size: sizeRaw || undefined, qty: 0, urgentQty: 0, ids: [] };
       g.sizes.push(bucket);
     }
     bucket.qty += it.qty;
+    bucket.urgentQty += lineUrgentQty(it);
     bucket.ids.push(it.id);
   }
   for (const g of map.values()) {
@@ -105,13 +112,26 @@ function groupItems(items: ProductionItem[]): Group[] {
 
 function sortGroups(groups: Group[], sort: Sort): Group[] {
   const arr = [...groups];
+  arr.sort((a, b) => {
+    const au = a.urgentQty > 0 ? 1 : 0;
+    const bu = b.urgentQty > 0 ? 1 : 0;
+    return bu - au;
+  });
   if (sort === "qty") {
     arr.sort((a, b) => {
+      if ((b.urgentQty > 0 ? 1 : 0) !== (a.urgentQty > 0 ? 1 : 0)) {
+        return (b.urgentQty > 0 ? 1 : 0) - (a.urgentQty > 0 ? 1 : 0);
+      }
       if (b.totalQty !== a.totalQty) return b.totalQty - a.totalQty;
       return a.name.localeCompare(b.name, "ru");
     });
   } else {
-    arr.sort((a, b) => a.name.localeCompare(b.name, "ru"));
+    arr.sort((a, b) => {
+      if ((b.urgentQty > 0 ? 1 : 0) !== (a.urgentQty > 0 ? 1 : 0)) {
+        return (b.urgentQty > 0 ? 1 : 0) - (a.urgentQty > 0 ? 1 : 0);
+      }
+      return a.name.localeCompare(b.name, "ru");
+    });
   }
   return arr;
 }
@@ -120,6 +140,7 @@ export function ProductionTab() {
   const [data, setData] = useState<ApiState>({ items: [], lastPostAt: null });
   const [mode, setMode] = useState<Mode>("grid");
   const [sort, setSort] = useState<Sort>("qty");
+  const [filter, setFilter] = useState<Filter>("all");
   const [query, setQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
 
@@ -157,11 +178,13 @@ export function ProductionTab() {
 
   const visibleGroups = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const filtered = q
+    const byText = q
       ? allGroups.filter((g) => g.name.toLowerCase().includes(q))
       : allGroups;
+    const filtered =
+      filter === "urgent" ? byText.filter((g) => g.urgentQty > 0) : byText;
     return sortGroups(filtered, sort);
-  }, [allGroups, query, sort]);
+  }, [allGroups, query, sort, filter]);
 
   const visibleUnits = useMemo(
     () => visibleGroups.reduce((s, g) => s + g.totalQty, 0),
@@ -185,6 +208,14 @@ export function ProductionTab() {
           options={[
             { value: "qty", label: "По кол-ву" },
             { value: "name", label: "По названию" },
+          ]}
+        />
+        <Segmented<Filter>
+          value={filter}
+          onChange={setFilter}
+          options={[
+            { value: "all", label: "Все" },
+            { value: "urgent", label: "Срочно" },
           ]}
         />
         <Input
@@ -246,7 +277,10 @@ function GridView({ groups }: { groups: Group[] }) {
       {groups.map((g) => (
         <li
           key={g.key}
-          className="bg-[var(--color-surface)] overflow-hidden flex flex-col"
+          className={
+            "overflow-hidden flex flex-col " +
+            (g.urgentQty > 0 ? "bg-[#d11a1a]" : "bg-[var(--color-surface)]")
+          }
         >
           <div className="relative aspect-square bg-black/40">
             {g.imageUrl ? (
@@ -266,7 +300,12 @@ function GridView({ groups }: { groups: Group[] }) {
               </div>
             )}
             <div className="absolute bottom-2 right-2 z-[1]">
-              <span className="inline-flex items-center px-3 h-9 bg-[var(--color-accent)] text-[var(--color-foreground)] text-sm font-light tabular-nums tracking-wider">
+              <span
+                className={
+                  "inline-flex items-center px-3 h-9 text-[var(--color-foreground)] text-sm font-light tabular-nums tracking-wider " +
+                  (g.urgentQty > 0 ? "bg-[#7f0f0f]" : "bg-[var(--color-accent)]")
+                }
+              >
                 ×{fmtNumber(g.totalQty, 0)}
               </span>
             </div>
@@ -292,13 +331,21 @@ function ListView({ groups }: { groups: Group[] }) {
       {groups.map((g) => (
         <li
           key={g.key}
-          className="flex items-center gap-3 py-3 first:pt-0"
+          className={
+            "flex items-center gap-3 py-3 first:pt-0 " +
+            (g.urgentQty > 0 ? "bg-[#d11a1a]/20 px-2 -mx-2" : "")
+          }
         >
           <div className="flex-1 min-w-0">
             <div className="font-semibold truncate">{g.name}</div>
             <SizeChips sizes={g.sizes} className="mt-1" />
           </div>
-          <span className="inline-flex items-center px-3 h-9 bg-[var(--color-accent)] text-[var(--color-foreground)] text-sm font-light tabular-nums tracking-wider">
+          <span
+            className={
+              "inline-flex items-center px-3 h-9 text-[var(--color-foreground)] text-sm font-light tabular-nums tracking-wider " +
+              (g.urgentQty > 0 ? "bg-[#d11a1a]" : "bg-[var(--color-accent)]")
+            }
+          >
             ×{fmtNumber(g.totalQty, 0)}
           </span>
         </li>
@@ -320,7 +367,10 @@ function SizeChips({
       {sizes.map((s, i) => (
         <span
           key={i}
-          className="inline-flex items-center gap-1.5 h-7 px-2.5 text-[12px] font-light uppercase tracking-[0.18em] bg-[var(--color-surface)] text-[var(--color-foreground)]"
+          className={
+            "inline-flex items-center gap-1.5 h-7 px-2.5 text-[12px] font-light uppercase tracking-[0.18em] text-[var(--color-foreground)] " +
+            (s.urgentQty > 0 ? "bg-[#d11a1a]" : "bg-[var(--color-surface)]")
+          }
           title={s.size ? `Размер ${s.size}` : "Размер не указан"}
         >
           <span className="text-[var(--color-muted)]">{s.size ?? "—"}</span>

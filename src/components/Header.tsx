@@ -1,6 +1,6 @@
 "use client";
 
-export type View = "production" | "main" | "settings";
+export type View = "production" | "main" | "settings" | "manager";
 
 interface Props {
   view: View;
@@ -17,7 +17,8 @@ export function Header({ view, setView }: Props) {
   return (
     <header className="sticky top-0 z-20 bg-[var(--color-background)]">
       <div className="max-w-6xl mx-auto px-4 sm:px-6">
-        <div className="h-14 flex items-center justify-center">
+        <div className="h-14 grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+          <div />
           <a href="#" aria-label="На главную" className="block select-none">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
@@ -27,6 +28,21 @@ export function Header({ view, setView }: Props) {
               className="h-9 w-auto object-contain pointer-events-none"
             />
           </a>
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={() => setView("manager")}
+              aria-current={view === "manager" ? "page" : undefined}
+              className={
+                "h-9 px-3 text-[10px] sm:text-[11px] font-light uppercase tracking-[0.18em] transition-colors " +
+                (view === "manager"
+                  ? "bg-[var(--color-accent)] text-[var(--color-foreground)]"
+                  : "bg-[var(--color-surface)] text-[var(--color-muted)] hover:text-[var(--color-foreground)]")
+              }
+            >
+              Панель манагера
+            </button>
+          </div>
         </div>
       </div>
 

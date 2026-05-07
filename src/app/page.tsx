@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Header, type View } from "@/components/Header";
 import { HydrationGate } from "@/components/HydrationGate";
 import { MainTab } from "@/components/MainTab";
+import { ManagerTab } from "@/components/ManagerTab";
 import { ProductionTab } from "@/components/ProductionTab";
 import { SettingsTab } from "@/components/SettingsTab";
 
@@ -16,6 +17,7 @@ export default function Home() {
 
       <div className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-6">
         {view === "production" && <ProductionTab />}
+        {view === "manager" && <ManagerTab />}
         {view === "main" && (
           <HydrationGate>
             <MainTab />

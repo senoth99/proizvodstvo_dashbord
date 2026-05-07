@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useStore } from "@/lib/store";
 import type { Material } from "@/lib/types";
 import type { ProductionItem } from "@/lib/server/store";
+import { lineUrgentQty } from "@/lib/urgentDisplay";
 import { fmtNumber } from "@/lib/format";
 import { Button, Empty, Input, Modal } from "./ui";
 
@@ -44,6 +45,7 @@ interface ProdGroup {
   key: string;
   name: string;
   qty: number;
+  urgentQty: number;
 }
 
 function groupProduction(items: ProductionItem[]): ProdGroup[] {
@@ -53,13 +55,19 @@ function groupProduction(items: ProductionItem[]): ProdGroup[] {
       it.matchedSlug || normalizeKey(it.matchedName ?? it.name) || it.id;
     let g = map.get(key);
     if (!g) {
-      g = { key, name: it.matchedName || it.name, qty: 0 };
+      g = { key, name: it.matchedName || it.name, qty: 0, urgentQty: 0 };
       map.set(key, g);
     }
     g.qty += it.qty;
+    g.urgentQty += lineUrgentQty(it);
     if (it.matchedName) g.name = it.matchedName;
   }
-  return Array.from(map.values()).sort((a, b) => b.qty - a.qty);
+  return Array.from(map.values()).sort((a, b) => {
+    const au = a.urgentQty > 0 ? 1 : 0;
+    const bu = b.urgentQty > 0 ? 1 : 0;
+    if (bu !== au) return bu - au;
+    return b.qty - a.qty;
+  });
 }
 
 export function MainTab() {
@@ -174,7 +182,7 @@ export function MainTab() {
             value: g.qty,
             max: groups[0]?.qty || 1,
             meta: `${fmtNumber(g.qty, 0)} шт`,
-            color: ACCENT,
+            color: g.urgentQty > 0 ? RED : ACCENT,
           }))}
         />
       </DashboardSection>
