@@ -6,7 +6,7 @@ WORKDIR /app
 RUN corepack enable
 COPY package.json pnpm-lock.yaml* pnpm-workspace.yaml* .npmrc* ./
 RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
-    pnpm install --frozen-lockfile
+    pnpm install --frozen-lockfile --ignore-scripts
 
 # ─── builder: build Next.js (standalone output) ───────────────────
 FROM node:22-alpine AS builder
