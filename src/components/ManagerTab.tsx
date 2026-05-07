@@ -68,6 +68,8 @@ function ManagerTabContent() {
   const [picked, setPicked] = useState<Record<string, number>>({});
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [clearingKey, setClearingKey] = useState<string | null>(null);
+  const [clearingAll, setClearingAll] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -136,11 +138,74 @@ function ManagerTabContent() {
     }
   };
 
+  const clearUrgentForKey = async (key: string) => {
+    setClearingKey(key);
+    try {
+      const r = await fetch("/api/production/urgent", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ key, qty: 0 }),
+      });
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        setError(
+          typeof (j as { error?: string }).error === "string"
+            ? (j as { error: string }).error
+            : "Не удалось снять срочное",
+        );
+        return;
+      }
+      setError(null);
+      await refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Ошибка сети");
+    } finally {
+      setClearingKey(null);
+    }
+  };
+
+  const clearAllUrgent = async () => {
+    setClearingAll(true);
+    try {
+      const r = await fetch("/api/production/urgent", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ clearAll: true }),
+      });
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        setError(
+          typeof (j as { error?: string }).error === "string"
+            ? (j as { error: string }).error
+            : "Не удалось снять все срочные",
+        );
+        return;
+      }
+      setError(null);
+      await refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Ошибка сети");
+    } finally {
+      setClearingAll(false);
+    }
+  };
+
+  const hasAnyUrgent = useMemo(() => groups.some((g) => g.urgentQty > 0), [groups]);
+
   return (
     <>
       <div className="flex flex-col gap-4">
         <Button block onClick={() => setOpen(true)} disabled={groups.length === 0}>
           Добавить товар в срочные
+        </Button>
+
+        <Button
+          variant="ghost"
+          block
+          disabled={!hasAnyUrgent || clearingAll}
+          onClick={() => void clearAllUrgent()}
+        >
+          {clearingAll ? "Снимаем…" : "Снять все срочные"}
         </Button>
 
         <Input
@@ -179,8 +244,22 @@ function ManagerTabContent() {
                   </div>
                 </div>
                 {g.urgentQty > 0 && (
-                  <div className="mt-2 text-[10px] uppercase tracking-[0.18em] text-[var(--color-foreground)]">
-                    СРОЧНО — {fmtNumber(g.urgentQty, 0)} шт
+                  <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                    <div className="text-[10px] uppercase tracking-[0.18em] text-[var(--color-foreground)]">
+                      СРОЧНО — {fmtNumber(g.urgentQty, 0)} шт
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      disabled={clearingKey === g.key}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        void clearUrgentForKey(g.key);
+                      }}
+                    >
+                      {clearingKey === g.key ? "…" : "Снять срочное"}
+                    </Button>
                   </div>
                 )}
               </li>

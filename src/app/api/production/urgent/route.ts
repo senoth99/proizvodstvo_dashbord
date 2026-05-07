@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { setUrgentTarget } from "@/lib/server/store";
+import { clearAllUrgentTargets, setUrgentTarget } from "@/lib/server/store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,6 +27,10 @@ export async function POST(req: NextRequest) {
   } catch {
     return json({ ok: false, error: "invalid json" }, { status: 400 });
   }
+  if (body && typeof body === "object" && (body as { clearAll?: unknown }).clearAll === true) {
+    await clearAllUrgentTargets();
+    return json({ ok: true });
+  }
   const key =
     body && typeof body === "object" && "key" in body
       ? String((body as { key?: string }).key ?? "")
@@ -35,8 +39,14 @@ export async function POST(req: NextRequest) {
     body && typeof body === "object" && "qty" in body
       ? Number((body as { qty?: number }).qty)
       : NaN;
-  if (!key || !Number.isFinite(qty) || qty <= 0) {
-    return json({ ok: false, error: "expected { key, qty > 0 }" }, { status: 400 });
+  if (!key || !Number.isFinite(qty)) {
+    return json(
+      { ok: false, error: "expected { key, qty ≥ 0 } or { clearAll: true }" },
+      { status: 400 },
+    );
+  }
+  if (qty < 0) {
+    return json({ ok: false, error: "qty must be ≥ 0" }, { status: 400 });
   }
   await setUrgentTarget(key, qty);
   return json({ ok: true });

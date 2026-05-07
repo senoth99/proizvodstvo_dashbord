@@ -3,6 +3,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ProductionItem } from "@/lib/server/store";
 import { lineUrgentQty } from "@/lib/urgentDisplay";
+import type { Consumable, ConsumableBomLine } from "@/lib/types";
+import {
+  planConsumablesForItems,
+  type PlannedConsumableLine,
+} from "@/lib/consumablePlan";
+import { useStore } from "@/lib/store";
 import { Empty, Input, Segmented } from "./ui";
 import { fmtNumber } from "@/lib/format";
 
@@ -65,6 +71,8 @@ interface Group {
   urgentQty: number;
   ids: string[];
   sizes: SizeBucket[];
+  consumablePlan: PlannedConsumableLine[];
+  consumableShortage: boolean;
 }
 
 function groupItems(items: ProductionItem[]): Group[] {
@@ -83,6 +91,8 @@ function groupItems(items: ProductionItem[]): Group[] {
         urgentQty: 0,
         ids: [],
         sizes: [],
+        consumablePlan: [],
+        consumableShortage: false,
       };
       map.set(groupKey, g);
     }
@@ -108,6 +118,30 @@ function groupItems(items: ProductionItem[]): Group[] {
     g.sizes.sort((a, b) => sizeRank(a.size) - sizeRank(b.size));
   }
   return Array.from(map.values());
+}
+
+function attachConsumablePlans(
+  groups: Group[],
+  items: ProductionItem[],
+  catalogConsumableBoms: Record<string, ConsumableBomLine[]>,
+  consumables: Consumable[]
+): Group[] {
+  const byId = new Map(items.map((i) => [i.id, i]));
+  return groups.map((g) => {
+    const subset = g.ids
+      .map((id) => byId.get(id))
+      .filter((i): i is ProductionItem => !!i);
+    const plan = planConsumablesForItems(
+      subset,
+      catalogConsumableBoms,
+      consumables
+    );
+    return {
+      ...g,
+      consumablePlan: plan,
+      consumableShortage: plan.some((p) => p.shortage > 0),
+    };
+  });
 }
 
 function sortGroups(groups: Group[], sort: Sort): Group[] {
@@ -137,6 +171,8 @@ function sortGroups(groups: Group[], sort: Sort): Group[] {
 }
 
 export function ProductionTab() {
+  const catalogConsumableBoms = useStore((s) => s.catalogConsumableBoms);
+  const consumables = useStore((s) => s.consumables);
   const [data, setData] = useState<ApiState>({ items: [], lastPostAt: null });
   const [mode, setMode] = useState<Mode>("grid");
   const [sort, setSort] = useState<Sort>("qty");
@@ -170,7 +206,16 @@ export function ProductionTab() {
     return () => clearInterval(t);
   }, [refresh]);
 
-  const allGroups = useMemo(() => groupItems(data.items), [data.items]);
+  const allGroups = useMemo(
+    () =>
+      attachConsumablePlans(
+        groupItems(data.items),
+        data.items,
+        catalogConsumableBoms,
+        consumables
+      ),
+    [data.items, catalogConsumableBoms, consumables]
+  );
   const totalUnits = useMemo(
     () => data.items.reduce((s, i) => s + i.qty, 0),
     [data.items]
@@ -267,6 +312,96 @@ export function ProductionTab() {
       ) : (
         <ListView groups={visibleGroups} />
       )}
+
+      <details className="mt-2 text-[10px] uppercase tracking-[0.14em] text-[var(--color-muted)]">
+        <summary className="cursor-pointer text-sky-400/90 hover:text-sky-300 transition-colors">
+          Как работают расходники
+        </summary>
+        <div className="mt-3 normal-case tracking-normal text-[var(--color-foreground)]/85 space-y-2 leading-relaxed max-w-2xl">
+          <p>
+            В настройках заведите позиции в разделе «Расходники» и укажите остатки
+            на складе. Для каждого изделия в «Изделия» → карточка товара задайте
+            норму: сколько расходника уходит на одну штуку изделия.
+          </p>
+          <p>
+            Когда позиция попадает в очередь «На производство», под карточкой
+            показывается расчёт: сколько всего нужно расходника на эту очередь,
+            сколько есть на складе и какой будет остаток после списания.
+          </p>
+          <p>
+            Синяя рамка вокруг карточки значит, что для изделия заданы нормы
+            расходников. Метка «НЕХВАТАЕТ» (синим) — если после списания остаток
+            ушёл бы в минус; рядом указано, не хватает какого количества.
+          </p>
+          <p>
+            При «Оприходовать товар» на главной расходники списываются так же,
+            как материалы по BOM себестоимости — пропорционально количеству
+            принятой продукции.
+          </p>
+        </div>
+      </details>
+    </div>
+  );
+}
+
+function ConsumablePlanPanel({
+  plan,
+  urgent,
+}: {
+  plan: PlannedConsumableLine[];
+  urgent: boolean;
+}) {
+  if (!plan.length) return null;
+  return (
+    <div
+      className={
+        "rounded-sm border px-2 py-2 space-y-1.5 " +
+        (urgent
+          ? "border-sky-400/50 bg-black/25"
+          : "border-sky-500/45 bg-sky-950/40")
+      }
+    >
+      {plan.some((p) => p.shortage > 0) && (
+        <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-sky-300">
+          НЕХВАТАЕТ
+        </div>
+      )}
+      <ul className="space-y-1.5">
+        {plan.map((row) => (
+          <li
+            key={row.consumableId}
+            className={
+              "text-[10px] leading-snug font-light tracking-wide normal-case " +
+              (row.shortage > 0 ? "text-sky-200" : "text-sky-100/90")
+            }
+          >
+            <span className="font-medium text-sky-100/95">{row.name}</span>
+            {": нужно "}
+            <span className="tabular-nums">
+              {fmtNumber(row.required)} {row.unit}
+            </span>
+            {" · на складе "}
+            <span className="tabular-nums">
+              {fmtNumber(row.stock)} {row.unit}
+            </span>
+            {" · после списания "}
+            <span
+              className={
+                "tabular-nums " +
+                (row.balanceAfter < 0 ? "text-sky-300 font-medium" : "")
+              }
+            >
+              {fmtNumber(row.balanceAfter)} {row.unit}
+            </span>
+            {row.shortage > 0 && (
+              <span className="text-sky-300">
+                {" "}
+                (−{fmtNumber(row.shortage)} {row.unit})
+              </span>
+            )}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -279,7 +414,8 @@ function GridView({ groups }: { groups: Group[] }) {
           key={g.key}
           className={
             "overflow-hidden flex flex-col " +
-            (g.urgentQty > 0 ? "bg-[#d11a1a]" : "bg-[var(--color-surface)]")
+            (g.urgentQty > 0 ? "bg-[#d11a1a]" : "bg-[var(--color-surface)]") +
+            (g.consumablePlan.length > 0 ? " ring-2 ring-sky-500/65" : "")
           }
         >
           <div className="relative aspect-square bg-black/40">
@@ -317,6 +453,10 @@ function GridView({ groups }: { groups: Group[] }) {
             >
               {g.name}
             </div>
+            <ConsumablePlanPanel
+              plan={g.consumablePlan}
+              urgent={g.urgentQty > 0}
+            />
             <SizeChips sizes={g.sizes} />
           </div>
         </li>
@@ -332,12 +472,17 @@ function ListView({ groups }: { groups: Group[] }) {
         <li
           key={g.key}
           className={
-            "flex items-center gap-3 py-3 first:pt-0 " +
-            (g.urgentQty > 0 ? "bg-[#d11a1a]/20 px-2 -mx-2" : "")
+            "flex flex-col sm:flex-row sm:items-center gap-3 py-3 first:pt-0 " +
+            (g.urgentQty > 0 ? "bg-[#d11a1a]/20 px-2 -mx-2" : "") +
+            (g.consumablePlan.length > 0 ? " ring-2 ring-sky-500/50 sm:ring-inset" : "")
           }
         >
           <div className="flex-1 min-w-0">
             <div className="font-semibold truncate">{g.name}</div>
+            <ConsumablePlanPanel
+              plan={g.consumablePlan}
+              urgent={g.urgentQty > 0}
+            />
             <SizeChips sizes={g.sizes} className="mt-1" />
           </div>
           <span

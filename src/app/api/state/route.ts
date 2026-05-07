@@ -45,8 +45,14 @@ export async function PUT(req: NextRequest) {
   const b = (body ?? {}) as Partial<AppStateShape>;
   const safe: AppStateShape = {
     materials: Array.isArray(b.materials) ? b.materials : [],
+    consumables: Array.isArray(b.consumables) ? b.consumables : [],
     catalogBoms:
       b.catalogBoms && typeof b.catalogBoms === "object" ? b.catalogBoms : {},
+    catalogConsumableBoms:
+      b.catalogConsumableBoms &&
+      typeof b.catalogConsumableBoms === "object"
+        ? b.catalogConsumableBoms
+        : {},
     catalogManualCosts:
       b.catalogManualCosts && typeof b.catalogManualCosts === "object"
         ? b.catalogManualCosts

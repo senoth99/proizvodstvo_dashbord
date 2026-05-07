@@ -254,6 +254,12 @@ export async function clearAll(): Promise<void> {
   });
 }
 
+export async function clearAllUrgentTargets(): Promise<void> {
+  await withLock((state) => {
+    state.urgentTargets = {};
+  });
+}
+
 export async function setUrgentTarget(key: string, qty: number): Promise<void> {
   await withLock((state) => {
     const k = String(key || "").trim();

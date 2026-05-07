@@ -3,14 +3,16 @@
 import { useState } from "react";
 import { MaterialsTab } from "./MaterialsTab";
 import { ProductsTab } from "./ProductsTab";
+import { ConsumablesTab } from "./ConsumablesTab";
 import { HealthIndicators } from "./HealthIndicators";
 import { Button, Input } from "./ui";
 
-type Section = "products" | "materials";
+type Section = "products" | "materials" | "consumables";
 
 const SECTIONS: { id: Section; label: string; hint: string }[] = [
-  { id: "materials", label: "Материалы", hint: "Склад и цены" },
-  { id: "products", label: "Изделия", hint: "Спецификации (BOM)" },
+  { id: "materials", label: "Материалы", hint: "Себестоимость изделия" },
+  { id: "consumables", label: "Расходники", hint: "Нормы на производство" },
+  { id: "products", label: "Изделия", hint: "Спецификации в каталоге" },
 ];
 
 const SETTINGS_PASSWORD = "Casher1337";
@@ -52,6 +54,7 @@ export function SettingsTab() {
 
       {section === "products" && <ProductsTab />}
       {section === "materials" && <MaterialsTab />}
+      {section === "consumables" && <ConsumablesTab />}
     </div>
   );
 }

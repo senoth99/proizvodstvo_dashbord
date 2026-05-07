@@ -16,7 +16,11 @@ export default function Home() {
       <Header view={view} setView={setView} />
 
       <div className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-6">
-        {view === "production" && <ProductionTab />}
+        {view === "production" && (
+          <HydrationGate>
+            <ProductionTab />
+          </HydrationGate>
+        )}
         {view === "manager" && <ManagerTab />}
         {view === "main" && (
           <HydrationGate>

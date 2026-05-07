@@ -42,6 +42,20 @@ export interface BomLine {
   qtyPerUnit: number;
 }
 
+export interface Consumable {
+  id: string;
+  name: string;
+  unit: string;
+  stock: number;
+  minStock?: number;
+  notes?: string;
+}
+
+export interface ConsumableBomLine {
+  consumableId: string;
+  qtyPerUnit: number;
+}
+
 export interface Product {
   id: string;
   name: string;

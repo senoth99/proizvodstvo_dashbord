@@ -1,11 +1,13 @@
 import "server-only";
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import type { BomLine, Material } from "@/lib/types";
+import type { BomLine, Consumable, ConsumableBomLine, Material } from "@/lib/types";
 
 export interface AppStateShape {
   materials: Material[];
+  consumables: Consumable[];
   catalogBoms: Record<string, BomLine[]>;
+  catalogConsumableBoms: Record<string, ConsumableBomLine[]>;
   catalogManualCosts: Record<string, number>;
   catalogHidden: Record<string, boolean>;
   catalogStock: Record<string, number>;
@@ -23,7 +25,9 @@ const empty: AppStateFile = {
   rev: 0,
   updatedAt: new Date(0).toISOString(),
   materials: [],
+  consumables: [],
   catalogBoms: {},
+  catalogConsumableBoms: {},
   catalogManualCosts: {},
   catalogHidden: {},
   catalogStock: {},
@@ -52,9 +56,15 @@ function normalize(parsed: Partial<AppStateFile>): AppStateFile {
         ? parsed.updatedAt
         : new Date(0).toISOString(),
     materials: Array.isArray(parsed.materials) ? parsed.materials : [],
+    consumables: Array.isArray(parsed.consumables) ? parsed.consumables : [],
     catalogBoms:
       parsed.catalogBoms && typeof parsed.catalogBoms === "object"
         ? parsed.catalogBoms
+        : {},
+    catalogConsumableBoms:
+      parsed.catalogConsumableBoms &&
+      typeof parsed.catalogConsumableBoms === "object"
+        ? parsed.catalogConsumableBoms
         : {},
     catalogManualCosts:
       parsed.catalogManualCosts && typeof parsed.catalogManualCosts === "object"
@@ -111,7 +121,9 @@ export async function putStateDb(input: AppStateShape): Promise<AppStateFile> {
       rev: (cur.rev ?? 0) + 1,
       updatedAt: new Date().toISOString(),
       materials: input.materials,
+      consumables: input.consumables,
       catalogBoms: input.catalogBoms,
+      catalogConsumableBoms: input.catalogConsumableBoms,
       catalogManualCosts: input.catalogManualCosts,
       catalogHidden: input.catalogHidden,
       catalogStock: input.catalogStock,

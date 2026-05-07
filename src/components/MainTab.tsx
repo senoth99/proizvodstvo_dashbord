@@ -5,6 +5,7 @@ import { useStore } from "@/lib/store";
 import type { Material } from "@/lib/types";
 import type { ProductionItem } from "@/lib/server/store";
 import { lineUrgentQty } from "@/lib/urgentDisplay";
+import { planConsumablesForItems } from "@/lib/consumablePlan";
 import { fmtNumber } from "@/lib/format";
 import { Button, Empty, Input, Modal } from "./ui";
 
@@ -46,6 +47,8 @@ interface ProdGroup {
   name: string;
   qty: number;
   urgentQty: number;
+  consumableShortage: boolean;
+  hasConsumablePlan: boolean;
 }
 
 function groupProduction(items: ProductionItem[]): ProdGroup[] {
@@ -55,7 +58,14 @@ function groupProduction(items: ProductionItem[]): ProdGroup[] {
       it.matchedSlug || normalizeKey(it.matchedName ?? it.name) || it.id;
     let g = map.get(key);
     if (!g) {
-      g = { key, name: it.matchedName || it.name, qty: 0, urgentQty: 0 };
+      g = {
+        key,
+        name: it.matchedName || it.name,
+        qty: 0,
+        urgentQty: 0,
+        consumableShortage: false,
+        hasConsumablePlan: false,
+      };
       map.set(key, g);
     }
     g.qty += it.qty;
@@ -72,6 +82,8 @@ function groupProduction(items: ProductionItem[]): ProdGroup[] {
 
 export function MainTab() {
   const materials = useStore((s) => s.materials);
+  const catalogConsumableBoms = useStore((s) => s.catalogConsumableBoms);
+  const consumables = useStore((s) => s.consumables);
   const [prod, setProd] = useState<ApiState>({ items: [], lastPostAt: null });
   const [receiveOpen, setReceiveOpen] = useState(false);
 
@@ -97,7 +109,26 @@ export function MainTab() {
     return () => clearInterval(t);
   }, [refresh]);
 
-  const groups = useMemo(() => groupProduction(prod.items), [prod.items]);
+  const groups = useMemo(() => {
+    const base = groupProduction(prod.items);
+    return base.map((g) => {
+      const subset = prod.items.filter(
+        (it) =>
+          (it.matchedSlug || normalizeKey(it.matchedName ?? it.name) || it.id) ===
+          g.key
+      );
+      const plan = planConsumablesForItems(
+        subset,
+        catalogConsumableBoms,
+        consumables
+      );
+      return {
+        ...g,
+        consumableShortage: plan.some((p) => p.shortage > 0),
+        hasConsumablePlan: plan.length > 0,
+      };
+    });
+  }, [prod.items, catalogConsumableBoms, consumables]);
   const stats = useMemo(() => {
     let lowStock = 0;
     let runningOut = 0;
@@ -181,8 +212,20 @@ export function MainTab() {
             label: g.name,
             value: g.qty,
             max: groups[0]?.qty || 1,
-            meta: `${fmtNumber(g.qty, 0)} шт`,
-            color: g.urgentQty > 0 ? RED : ACCENT,
+            meta:
+              `${fmtNumber(g.qty, 0)} шт` +
+              (g.consumableShortage
+                ? " · НЕХВАТАЕТ расходников"
+                : g.hasConsumablePlan
+                  ? " · расходники"
+                  : ""),
+            color: g.consumableShortage
+              ? "#38bdf8"
+              : g.hasConsumablePlan
+                ? "#0ea5e9"
+                : g.urgentQty > 0
+                  ? RED
+                  : ACCENT,
           }))}
         />
       </DashboardSection>
@@ -265,9 +308,12 @@ interface ReceiveLine {
 function ReceiveModalContent({ onClose }: { onClose: () => void }) {
   const catalogHidden = useStore((s) => s.catalogHidden);
   const catalogBoms = useStore((s) => s.catalogBoms);
+  const catalogConsumableBoms = useStore((s) => s.catalogConsumableBoms);
   const materials = useStore((s) => s.materials);
+  const consumables = useStore((s) => s.consumables);
   const addCatalogStock = useStore((s) => s.addCatalogStock);
   const updateMaterial = useStore((s) => s.updateMaterial);
+  const updateConsumable = useStore((s) => s.updateConsumable);
 
   const [items, setItems] = useState<CatalogItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -334,21 +380,37 @@ function ReceiveModalContent({ onClose }: { onClose: () => void }) {
   const submit = () => {
     if (!canSave) return;
     const matDelta = new Map<string, number>();
+    const consDelta = new Map<string, number>();
     for (const [key, q] of valid) {
       addCatalogStock(key, q);
       const bom = catalogBoms?.[key];
-      if (!Array.isArray(bom)) continue;
-      for (const line of bom) {
-        const matId = line?.materialId;
-        const per = Number(line?.qtyPerUnit);
-        if (!matId || !Number.isFinite(per) || per <= 0) continue;
-        matDelta.set(matId, (matDelta.get(matId) ?? 0) + per * q);
+      if (Array.isArray(bom)) {
+        for (const line of bom) {
+          const matId = line?.materialId;
+          const per = Number(line?.qtyPerUnit);
+          if (!matId || !Number.isFinite(per) || per <= 0) continue;
+          matDelta.set(matId, (matDelta.get(matId) ?? 0) + per * q);
+        }
+      }
+      const cBom = catalogConsumableBoms?.[key];
+      if (Array.isArray(cBom)) {
+        for (const line of cBom) {
+          const cid = line?.consumableId;
+          const per = Number(line?.qtyPerUnit);
+          if (!cid || !Number.isFinite(per) || per <= 0) continue;
+          consDelta.set(cid, (consDelta.get(cid) ?? 0) + per * q);
+        }
       }
     }
     for (const [matId, used] of matDelta) {
       const m = materials.find((mm) => mm.id === matId);
       if (!m) continue;
       updateMaterial(matId, { stock: (Number(m.stock) || 0) - used });
+    }
+    for (const [cid, used] of consDelta) {
+      const c = consumables.find((cc) => cc.id === cid);
+      if (!c) continue;
+      updateConsumable(cid, { stock: (Number(c.stock) || 0) - used });
     }
     onClose();
   };
