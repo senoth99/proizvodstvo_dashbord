@@ -147,6 +147,7 @@ export function MainTab() {
       const demand = materialDemand.get(m.id) ?? 0;
       const stock = Number(m.stock) || 0;
       const min = Number(m.minStock) || 0;
+      const stockStatus = statusOf(m);
       const after = stock - demand;
       const shortage = after < 0 ? -after : 0;
       const warnSoon =
@@ -172,12 +173,12 @@ export function MainTab() {
               min > 0 ? ` / мин ${fmtNumber(min)} ${m.unit}` : ""
             }`,
         color: !hasDemand
-          ? ACCENT
+          ? colorFor(stockStatus)
           : shortage > 0
             ? "#38bdf8"
             : warnSoon
               ? "#38bdf8"
-              : "#0ea5e9",
+              : colorFor(stockStatus),
         marker: hasDemand
           ? demand
           : min > 0
@@ -651,7 +652,7 @@ function ProductPickerContent({
           <Empty>Ничего не найдено.</Empty>
         ) : (
           <ul
-            className="grid grid-cols-3 sm:grid-cols-4 gap-2"
+            className="grid grid-cols-2 sm:grid-cols-4 gap-2"
             style={{ maxHeight: 380, overflowY: "auto" }}
           >
             {filtered.map((it) => {
@@ -806,14 +807,14 @@ function BarChart({ rows }: { rows: BarRow[] }) {
             : null;
         return (
           <li key={r.key} className="flex flex-col gap-1.5">
-            <div className="flex items-center justify-between gap-3 text-[12px]">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 sm:gap-3 text-[12px]">
               <span
                 className="font-light uppercase tracking-wide truncate"
                 title={r.label}
               >
                 {r.label}
               </span>
-              <span className="text-[10px] uppercase tracking-[0.18em] text-[var(--color-muted)] tabular-nums normal-case shrink-0">
+              <span className="text-[10px] uppercase tracking-[0.18em] text-[var(--color-muted)] tabular-nums normal-case sm:shrink-0 break-words">
                 {r.meta}
               </span>
             </div>

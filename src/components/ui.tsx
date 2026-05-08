@@ -233,7 +233,7 @@ export function Modal({
       onClick={onClose}
     >
       <div
-        className="bg-[var(--color-background)] w-full sm:max-w-lg shadow-[0_30px_80px_-20px_rgba(0,0,0,0.85)]"
+        className="bg-[var(--color-background)] w-full sm:max-w-lg max-h-[92vh] flex flex-col shadow-[0_30px_80px_-20px_rgba(0,0,0,0.85)]"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between gap-3 px-5 py-4">
@@ -251,9 +251,9 @@ export function Modal({
             </button>
           </div>
         </div>
-        <div className="p-5">{children}</div>
+        <div className="p-4 sm:p-5 overflow-y-auto">{children}</div>
         {footer && (
-          <div className="px-5 py-4 flex items-center justify-end gap-2">
+          <div className="px-4 sm:px-5 py-4 flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 [&>*]:w-full sm:[&>*]:w-auto">
             {footer}
           </div>
         )}
@@ -272,7 +272,7 @@ export function Segmented<T extends string>({
   options: { value: T; label: string; icon?: React.ReactNode }[];
 }) {
   return (
-    <div className="inline-flex items-center bg-[var(--color-surface)]">
+    <div className="inline-flex w-full sm:w-auto items-center bg-[var(--color-surface)] overflow-x-auto">
       {options.map((o) => {
         const active = o.value === value;
         return (
@@ -281,7 +281,7 @@ export function Segmented<T extends string>({
             type="button"
             onClick={() => onChange(o.value)}
             className={
-              "h-10 px-5 inline-flex items-center gap-2 text-[7px] uppercase tracking-[0.22em] font-light transition-colors " +
+              "h-10 min-w-0 flex-1 sm:flex-none px-4 sm:px-5 inline-flex items-center justify-center gap-2 text-[7px] uppercase tracking-[0.22em] font-light transition-colors " +
               (active
                 ? "bg-[var(--color-accent)] text-[var(--color-foreground)]"
                 : "text-[var(--color-muted)] hover:text-[var(--color-foreground)]")
