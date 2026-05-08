@@ -2,14 +2,12 @@
 
 import { create } from "zustand";
 import { nanoid } from "nanoid";
-import type { BomLine, Consumable, ConsumableBomLine, Material } from "./types";
+import type { BomLine, Material } from "./types";
 
 interface State {
   // ── server-synced ─────────────────────────────────────────
   materials: Material[];
-  consumables: Consumable[];
   catalogBoms: Record<string, BomLine[]>;
-  catalogConsumableBoms: Record<string, ConsumableBomLine[]>;
   catalogManualCosts: Record<string, number>;
   catalogHidden: Record<string, boolean>;
   catalogStock: Record<string, number>;
@@ -23,12 +21,7 @@ interface State {
   updateMaterial: (id: string, patch: Partial<Omit<Material, "id">>) => void;
   removeMaterial: (id: string) => void;
 
-  addConsumable: (c: Omit<Consumable, "id">) => string;
-  updateConsumable: (id: string, patch: Partial<Omit<Consumable, "id">>) => void;
-  removeConsumable: (id: string) => void;
-
   setCatalogBom: (key: string, bom: BomLine[]) => void;
-  setCatalogConsumableBom: (key: string, bom: ConsumableBomLine[]) => void;
   setCatalogManualCost: (key: string, cost: number | null) => void;
   setCatalogHidden: (key: string, hidden: boolean) => void;
   setCatalogStock: (key: string, qty: number) => void;
@@ -37,9 +30,7 @@ interface State {
 
 export const useStore = create<State>()((set) => ({
   materials: [],
-  consumables: [],
   catalogBoms: {},
-  catalogConsumableBoms: {},
   catalogManualCosts: {},
   catalogHidden: {},
   catalogStock: {},
@@ -64,40 +55,12 @@ export const useStore = create<State>()((set) => ({
       catalogBoms: stripMaterialFromBoms(s.catalogBoms, id),
     })),
 
-  addConsumable: (c) => {
-    const id = nanoid(8);
-    set((s) => ({ consumables: [...s.consumables, { id, ...c }] }));
-    return id;
-  },
-  updateConsumable: (id, patch) =>
-    set((s) => ({
-      consumables: s.consumables.map((c) =>
-        c.id === id ? { ...c, ...patch } : c
-      ),
-    })),
-  removeConsumable: (id) =>
-    set((s) => ({
-      consumables: s.consumables.filter((c) => c.id !== id),
-      catalogConsumableBoms: stripConsumableFromBoms(
-        s.catalogConsumableBoms,
-        id
-      ),
-    })),
-
   setCatalogBom: (key, bom) =>
     set((s) => {
       const next = { ...s.catalogBoms };
       if (!Array.isArray(bom) || bom.length === 0) delete next[key];
       else next[key] = bom;
       return { catalogBoms: next };
-    }),
-
-  setCatalogConsumableBom: (key, bom) =>
-    set((s) => {
-      const next = { ...s.catalogConsumableBoms };
-      if (!Array.isArray(bom) || bom.length === 0) delete next[key];
-      else next[key] = bom;
-      return { catalogConsumableBoms: next };
     }),
 
   setCatalogManualCost: (key, cost) =>
@@ -147,20 +110,6 @@ function stripMaterialFromBoms(
   return next;
 }
 
-function stripConsumableFromBoms(
-  boms: Record<string, ConsumableBomLine[]>,
-  consumableId: string
-): Record<string, ConsumableBomLine[]> {
-  const next: Record<string, ConsumableBomLine[]> = {};
-  for (const [k, lines] of Object.entries(boms)) {
-    const filtered = (lines ?? []).filter(
-      (l) => l.consumableId !== consumableId
-    );
-    if (filtered.length > 0) next[k] = filtered;
-  }
-  return next;
-}
-
 // ────────────────────────────────────────────────────────────
 // Server sync (singleton, безопасно вызывается многократно)
 // ────────────────────────────────────────────────────────────
@@ -170,9 +119,7 @@ const PUSH_DEBOUNCE_MS = 250;
 
 interface ServerPayload {
   materials: Material[];
-  consumables: Consumable[];
   catalogBoms: Record<string, BomLine[]>;
-  catalogConsumableBoms: Record<string, ConsumableBomLine[]>;
   catalogManualCosts: Record<string, number>;
   catalogHidden: Record<string, boolean>;
   catalogStock: Record<string, number>;
@@ -181,9 +128,7 @@ interface ServerPayload {
 function serialize(s: ServerPayload): string {
   return JSON.stringify({
     materials: s.materials,
-    consumables: s.consumables,
     catalogBoms: s.catalogBoms,
-    catalogConsumableBoms: s.catalogConsumableBoms,
     catalogManualCosts: s.catalogManualCosts,
     catalogHidden: s.catalogHidden,
     catalogStock: s.catalogStock,
@@ -207,15 +152,9 @@ async function pull() {
 
     const payload: ServerPayload = {
       materials: Array.isArray(data.materials) ? data.materials : [],
-      consumables: Array.isArray(data.consumables) ? data.consumables : [],
       catalogBoms:
         data.catalogBoms && typeof data.catalogBoms === "object"
           ? data.catalogBoms
-          : {},
-      catalogConsumableBoms:
-        data.catalogConsumableBoms &&
-        typeof data.catalogConsumableBoms === "object"
-          ? data.catalogConsumableBoms
           : {},
       catalogManualCosts:
         data.catalogManualCosts && typeof data.catalogManualCosts === "object"

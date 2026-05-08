@@ -3,15 +3,13 @@
 import { useState } from "react";
 import { MaterialsTab } from "./MaterialsTab";
 import { ProductsTab } from "./ProductsTab";
-import { ConsumablesTab } from "./ConsumablesTab";
 import { HealthIndicators } from "./HealthIndicators";
 import { Button, Input } from "./ui";
 
-type Section = "products" | "materials" | "consumables";
+type Section = "products" | "materials";
 
 const SECTIONS: { id: Section; label: string; hint: string }[] = [
-  { id: "materials", label: "Материалы", hint: "Себестоимость изделия" },
-  { id: "consumables", label: "Расходники", hint: "Нормы на производство" },
+  { id: "materials", label: "Материалы", hint: "Склад, нормы и себестоимость" },
   { id: "products", label: "Изделия", hint: "Спецификации в каталоге" },
 ];
 
@@ -54,7 +52,6 @@ export function SettingsTab() {
 
       {section === "products" && <ProductsTab />}
       {section === "materials" && <MaterialsTab />}
-      {section === "consumables" && <ConsumablesTab />}
     </div>
   );
 }

@@ -1,13 +1,11 @@
 import "server-only";
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import type { BomLine, Consumable, ConsumableBomLine, Material } from "@/lib/types";
+import type { BomLine, Material } from "@/lib/types";
 
 export interface AppStateShape {
   materials: Material[];
-  consumables: Consumable[];
   catalogBoms: Record<string, BomLine[]>;
-  catalogConsumableBoms: Record<string, ConsumableBomLine[]>;
   catalogManualCosts: Record<string, number>;
   catalogHidden: Record<string, boolean>;
   catalogStock: Record<string, number>;
@@ -18,6 +16,35 @@ export interface AppStateFile extends AppStateShape {
   updatedAt: string;
 }
 
+/** Старый формат state.json (расходники отдельно) — миграция при чтении. */
+interface LegacyConsumableLine {
+  consumableId?: string;
+  qtyPerUnit?: number;
+}
+
+interface LegacyConsumable {
+  id?: string;
+  name?: string;
+  unit?: string;
+  stock?: number;
+  minStock?: number;
+  notes?: string;
+}
+
+function mergeBomLines(a: BomLine[], b: BomLine[]): BomLine[] {
+  const m = new Map<string, number>();
+  for (const l of [...a, ...b]) {
+    const id = String(l.materialId || "").trim();
+    const q = Number(l.qtyPerUnit);
+    if (!id || !Number.isFinite(q) || q <= 0) continue;
+    m.set(id, (m.get(id) ?? 0) + q);
+  }
+  return [...m.entries()].map(([materialId, qtyPerUnit]) => ({
+    materialId,
+    qtyPerUnit,
+  }));
+}
+
 const DATA_DIR = path.join(process.cwd(), ".data");
 const FILE = path.join(DATA_DIR, "state.json");
 
@@ -25,9 +52,7 @@ const empty: AppStateFile = {
   rev: 0,
   updatedAt: new Date(0).toISOString(),
   materials: [],
-  consumables: [],
   catalogBoms: {},
-  catalogConsumableBoms: {},
   catalogManualCosts: {},
   catalogHidden: {},
   catalogStock: {},
@@ -48,24 +73,75 @@ async function ensureFile() {
   }
 }
 
-function normalize(parsed: Partial<AppStateFile>): AppStateFile {
+function normalize(
+  parsed: Partial<AppStateFile> & {
+    consumables?: LegacyConsumable[];
+    catalogConsumableBoms?: Record<string, LegacyConsumableLine[]>;
+  }
+): AppStateFile {
+  let materials: Material[] = Array.isArray(parsed.materials)
+    ? parsed.materials.map((m) => ({
+        ...m,
+        pricePerUnit:
+          typeof m.pricePerUnit === "number" && Number.isFinite(m.pricePerUnit)
+            ? m.pricePerUnit
+            : 0,
+        stock: typeof m.stock === "number" ? m.stock : 0,
+      }))
+    : [];
+
+  let catalogBoms: Record<string, BomLine[]> =
+    parsed.catalogBoms && typeof parsed.catalogBoms === "object"
+      ? (parsed.catalogBoms as Record<string, BomLine[]>)
+      : {};
+
+  const legacyC = Array.isArray(parsed.consumables) ? parsed.consumables : [];
+  const legacyCB =
+    parsed.catalogConsumableBoms &&
+    typeof parsed.catalogConsumableBoms === "object"
+      ? parsed.catalogConsumableBoms
+      : {};
+
+  if (legacyC.length > 0 || Object.keys(legacyCB).length > 0) {
+    const matIds = new Set(materials.map((m) => m.id));
+    for (const c of legacyC) {
+      const id = String(c.id || "").trim();
+      if (!id || matIds.has(id)) continue;
+      materials.push({
+        id,
+        name: String(c.name || "").trim() || id,
+        unit: String(c.unit || "шт").trim() || "шт",
+        stock: Number(c.stock) || 0,
+        minStock: c.minStock != null ? Number(c.minStock) : undefined,
+        notes: c.notes ? String(c.notes) : undefined,
+        pricePerUnit: 0,
+      });
+      matIds.add(id);
+    }
+
+    for (const [key, lines] of Object.entries(legacyCB)) {
+      const raw = Array.isArray(lines) ? lines : [];
+      const conv: BomLine[] = [];
+      for (const l of raw) {
+        const mid = String(l.consumableId || "").trim();
+        const q = Number(l.qtyPerUnit);
+        if (!mid || !Number.isFinite(q) || q <= 0) continue;
+        conv.push({ materialId: mid, qtyPerUnit: q });
+      }
+      if (conv.length === 0) continue;
+      const cur = catalogBoms[key] ? [...catalogBoms[key]] : [];
+      catalogBoms[key] = mergeBomLines(cur, conv);
+    }
+  }
+
   return {
     rev: typeof parsed.rev === "number" ? parsed.rev : 0,
     updatedAt:
       typeof parsed.updatedAt === "string"
         ? parsed.updatedAt
         : new Date(0).toISOString(),
-    materials: Array.isArray(parsed.materials) ? parsed.materials : [],
-    consumables: Array.isArray(parsed.consumables) ? parsed.consumables : [],
-    catalogBoms:
-      parsed.catalogBoms && typeof parsed.catalogBoms === "object"
-        ? parsed.catalogBoms
-        : {},
-    catalogConsumableBoms:
-      parsed.catalogConsumableBoms &&
-      typeof parsed.catalogConsumableBoms === "object"
-        ? parsed.catalogConsumableBoms
-        : {},
+    materials,
+    catalogBoms,
     catalogManualCosts:
       parsed.catalogManualCosts && typeof parsed.catalogManualCosts === "object"
         ? parsed.catalogManualCosts
@@ -85,7 +161,7 @@ async function readFromDisk(): Promise<AppStateFile> {
   await ensureFile();
   try {
     const raw = await fs.readFile(FILE, "utf8");
-    return normalize(JSON.parse(raw) as Partial<AppStateFile>);
+    return normalize(JSON.parse(raw) as Parameters<typeof normalize>[0]);
   } catch {
     return { ...empty };
   }
@@ -121,9 +197,7 @@ export async function putStateDb(input: AppStateShape): Promise<AppStateFile> {
       rev: (cur.rev ?? 0) + 1,
       updatedAt: new Date().toISOString(),
       materials: input.materials,
-      consumables: input.consumables,
       catalogBoms: input.catalogBoms,
-      catalogConsumableBoms: input.catalogConsumableBoms,
       catalogManualCosts: input.catalogManualCosts,
       catalogHidden: input.catalogHidden,
       catalogStock: input.catalogStock,

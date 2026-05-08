@@ -72,7 +72,7 @@ export function MaterialsTab() {
           block
           onClick={() => setModal({ mode: "create" })}
         >
-          + Добавить расходник
+          + Добавить материал
         </Button>
         <Button
           variant="secondary"
@@ -81,7 +81,7 @@ export function MaterialsTab() {
           onClick={() => setModal({ mode: "replenish" })}
           disabled={materials.length === 0}
         >
-          Пополнить расходники
+          Пополнить материалы
         </Button>
       </div>
 
@@ -313,7 +313,7 @@ function ReplenishModalContent({ onClose }: { onClose: () => void }) {
     <Modal
       open={true}
       onClose={onClose}
-      title="Пополнить расходники"
+      title="Пополнить материалы"
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>
@@ -328,7 +328,7 @@ function ReplenishModalContent({ onClose }: { onClose: () => void }) {
     >
       <div className="flex flex-col gap-3">
         <Input
-          placeholder="Поиск по расходнику"
+          placeholder="Поиск по материалу"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
@@ -429,7 +429,7 @@ function MaterialModalContent({
 
   const remove = () => {
     if (!isEdit) return;
-    if (!confirm(`Удалить расходник «${name || existing?.name}»?`)) return;
+    if (!confirm(`Удалить материал «${name || existing?.name}»?`)) return;
     removeMaterial(state.id);
     onClose();
   };
@@ -438,7 +438,7 @@ function MaterialModalContent({
     <Modal
       open={true}
       onClose={onClose}
-      title={isEdit ? "Изменить расходник" : "Новый расходник"}
+      title={isEdit ? "Изменить материал" : "Новый материал"}
       footer={
         <>
           {isEdit && (

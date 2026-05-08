@@ -1,7 +1,7 @@
 import { normalizeBomKey } from "@/lib/bomKey";
-import type { Consumable, ConsumableBomLine } from "@/lib/types";
+import type { BomLine, Material } from "@/lib/types";
 
-/** Поля очереди производства, нужные для расчёта расходников */
+/** Поля очереди производства для расчёта */
 export interface ProductionItemLike {
   matchedSlug?: string | null;
   matchedName?: string | null;
@@ -9,47 +9,36 @@ export interface ProductionItemLike {
   qty: number;
 }
 
-/** Строка плана на карточке: учёт всей очереди (фронт, без записи на сервер). */
-export interface ConsumableDisplayLine {
-  consumableId: string;
+/** Прогноз по материалу на карточке очереди (фронт). */
+export interface QueueMaterialLine {
+  materialId: string;
   name: string;
   unit: string;
-  /** Сколько уйдёт на эту карточку (группу) */
   requiredGroup: number;
-  /** Сколько уйдёт по всей очереди «На производство» */
   demandTotal: number;
-  /** Фактический остаток на складе */
   stock: number;
-  /** Остаток после вычета всей очереди: stock − demandTotal */
   afterQueue: number;
-  /** Не хватает на всю очередь, max(0, demandTotal − stock) */
   shortage: number;
-  /** Остаток после очереди > 0, но низкий — «скоро закончится» */
   warnSoon: boolean;
 }
 
-/**
- * Нормы расходников в настройках хранятся по slug или по нормализованному имени
- * (как в каталоге). На производстве у позиции часто есть slug из API — если
- * BOM заведён только по имени, без этого поиска синие статусы не появятся.
- */
-function consumableBomForItem(
+function materialBomForItem(
   it: ProductionItemLike,
-  catalogConsumableBoms: Record<string, ConsumableBomLine[]>
-): ConsumableBomLine[] | null {
+  catalogBoms: Record<string, BomLine[]>
+): BomLine[] | null {
   const slug = it.matchedSlug?.toString().trim();
   if (slug) {
-    const a = catalogConsumableBoms[slug];
+    const a = catalogBoms[slug];
     if (a?.length) return a;
   }
   const k1 = normalizeBomKey(it.matchedName ?? it.name);
   if (k1) {
-    const a = catalogConsumableBoms[k1];
+    const a = catalogBoms[k1];
     if (a?.length) return a;
   }
   const k2 = normalizeBomKey(it.name);
   if (k2 && k2 !== k1) {
-    const a = catalogConsumableBoms[k2];
+    const a = catalogBoms[k2];
     if (a?.length) return a;
   }
   return null;
@@ -57,59 +46,53 @@ function consumableBomForItem(
 
 function demandForItems(
   productionItems: ProductionItemLike[],
-  catalogConsumableBoms: Record<string, ConsumableBomLine[]>
+  catalogBoms: Record<string, BomLine[]>
 ): Map<string, number> {
   const demand = new Map<string, number>();
   for (const it of productionItems) {
-    const lines = consumableBomForItem(it, catalogConsumableBoms);
+    const lines = materialBomForItem(it, catalogBoms);
     if (!lines?.length) continue;
     const units = Number(it.qty) || 0;
     if (units <= 0) continue;
     for (const line of lines) {
-      const cid = line.consumableId;
+      const mid = line.materialId;
       const per = Number(line.qtyPerUnit);
-      if (!cid || !Number.isFinite(per) || per <= 0) continue;
-      demand.set(cid, (demand.get(cid) ?? 0) + per * units);
+      if (!mid || !Number.isFinite(per) || per <= 0) continue;
+      demand.set(mid, (demand.get(mid) ?? 0) + per * units);
     }
   }
   return demand;
 }
 
-/**
- * План расходников для одной карточки: потребность группы + глобально по очереди.
- * `afterQueue` / `shortage` / `warnSoon` считаются от суммарной потребности всей очереди.
- */
-export function buildConsumableLinesForGroup(
+export function buildQueueMaterialLinesForGroup(
   groupItems: ProductionItemLike[],
   allQueueItems: ProductionItemLike[],
-  catalogConsumableBoms: Record<string, ConsumableBomLine[]>,
-  consumables: Consumable[]
-): ConsumableDisplayLine[] {
-  const globalMap = demandForItems(allQueueItems, catalogConsumableBoms);
-  const groupMap = demandForItems(groupItems, catalogConsumableBoms);
-  const byId = new Map(consumables.map((c) => [c.id, c]));
-  const rows: ConsumableDisplayLine[] = [];
+  catalogBoms: Record<string, BomLine[]>,
+  materials: Material[]
+): QueueMaterialLine[] {
+  const globalMap = demandForItems(allQueueItems, catalogBoms);
+  const groupMap = demandForItems(groupItems, catalogBoms);
+  const byId = new Map(materials.map((m) => [m.id, m]));
+  const rows: QueueMaterialLine[] = [];
 
-  for (const [consumableId, requiredGroup] of groupMap) {
-    const c = byId.get(consumableId);
-    if (!c) continue;
-    const demandTotal = globalMap.get(consumableId) ?? requiredGroup;
-    const stock = Number(c.stock) || 0;
+  for (const [materialId, requiredGroup] of groupMap) {
+    const mat = byId.get(materialId);
+    if (!mat) continue;
+    const demandTotal = globalMap.get(materialId) ?? requiredGroup;
+    const stock = Number(mat.stock) || 0;
     const afterQueue = stock - demandTotal;
     const shortage = afterQueue < 0 ? -afterQueue : 0;
-    const minStock = Number(c.minStock) || 0;
+    const minStock = Number(mat.minStock) || 0;
     const warnSoon =
       shortage === 0 &&
       afterQueue > 0 &&
       ((minStock > 0 && afterQueue <= minStock) ||
-        (minStock <= 0 &&
-          stock > 0 &&
-          afterQueue / stock <= 0.15));
+        (minStock <= 0 && stock > 0 && afterQueue / stock <= 0.15));
 
     rows.push({
-      consumableId,
-      name: c.name,
-      unit: c.unit,
+      materialId,
+      name: mat.name,
+      unit: mat.unit,
       requiredGroup,
       demandTotal,
       stock,
@@ -123,10 +106,9 @@ export function buildConsumableLinesForGroup(
   return rows;
 }
 
-/** Суммарная потребность по расходникам на всю очередь (для главной и т.п.). */
-export function totalConsumableDemand(
+export function totalQueueMaterialDemand(
   productionItems: ProductionItemLike[],
-  catalogConsumableBoms: Record<string, ConsumableBomLine[]>
+  catalogBoms: Record<string, BomLine[]>
 ): Map<string, number> {
-  return demandForItems(productionItems, catalogConsumableBoms);
+  return demandForItems(productionItems, catalogBoms);
 }

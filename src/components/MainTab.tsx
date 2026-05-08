@@ -5,7 +5,10 @@ import { useStore } from "@/lib/store";
 import type { Material } from "@/lib/types";
 import type { ProductionItem } from "@/lib/server/store";
 import { lineUrgentQty } from "@/lib/urgentDisplay";
-import { buildConsumableLinesForGroup, totalConsumableDemand } from "@/lib/consumablePlan";
+import {
+  buildQueueMaterialLinesForGroup,
+  totalQueueMaterialDemand,
+} from "@/lib/consumablePlan";
 import { fmtNumber } from "@/lib/format";
 import { Button, Empty, Input, Modal } from "./ui";
 
@@ -84,8 +87,7 @@ function groupProduction(items: ProductionItem[]): ProdGroup[] {
 
 export function MainTab() {
   const materials = useStore((s) => s.materials);
-  const catalogConsumableBoms = useStore((s) => s.catalogConsumableBoms);
-  const consumables = useStore((s) => s.consumables);
+  const catalogBoms = useStore((s) => s.catalogBoms);
   const [prod, setProd] = useState<ApiState>({ items: [], lastPostAt: null });
   const [receiveOpen, setReceiveOpen] = useState(false);
 
@@ -119,11 +121,11 @@ export function MainTab() {
           (it.matchedSlug || normalizeKey(it.matchedName ?? it.name) || it.id) ===
           g.key
       );
-      const plan = buildConsumableLinesForGroup(
+      const plan = buildQueueMaterialLinesForGroup(
         subset,
         prod.items,
-        catalogConsumableBoms,
-        consumables
+        catalogBoms,
+        materials
       );
       return {
         ...g,
@@ -134,17 +136,17 @@ export function MainTab() {
         ),
       };
     });
-  }, [prod.items, catalogConsumableBoms, consumables]);
-  const consumableDemand = useMemo(
-    () => totalConsumableDemand(prod.items, catalogConsumableBoms),
-    [prod.items, catalogConsumableBoms]
+  }, [prod.items, catalogBoms, materials]);
+  const materialDemand = useMemo(
+    () => totalQueueMaterialDemand(prod.items, catalogBoms),
+    [prod.items, catalogBoms]
   );
 
-  const consumableRows = useMemo(() => {
-    return consumables.map((c) => {
-      const demand = consumableDemand.get(c.id) ?? 0;
-      const stock = Number(c.stock) || 0;
-      const min = Number(c.minStock) || 0;
+  const materialRows = useMemo(() => {
+    return materials.map((m) => {
+      const demand = materialDemand.get(m.id) ?? 0;
+      const stock = Number(m.stock) || 0;
+      const min = Number(m.minStock) || 0;
       const after = stock - demand;
       const shortage = after < 0 ? -after : 0;
       const warnSoon =
@@ -154,20 +156,20 @@ export function MainTab() {
           (min <= 0 && stock > 0 && after / stock <= 0.15));
       const hasDemand = demand > 0;
       return {
-        key: c.id,
-        label: c.name,
+        key: m.id,
+        label: m.name,
         value: stock,
         max: Math.max(stock, demand, min, 1),
         meta: hasDemand
-          ? `склад ${fmtNumber(stock)} ${c.unit} · очередь ${fmtNumber(demand)} · после ${fmtNumber(after)}${
+          ? `склад ${fmtNumber(stock)} ${m.unit} · очередь ${fmtNumber(demand)} · после ${fmtNumber(after)}${
               shortage > 0
                 ? ` · не хватает ${fmtNumber(shortage)}`
                 : warnSoon
                   ? " · мало ✎"
                   : ""
             }`
-          : `${fmtNumber(stock)} ${c.unit}${
-              min > 0 ? ` / мин ${fmtNumber(min)}` : ""
+          : `${fmtNumber(stock)} ${m.unit}${
+              min > 0 ? ` / мин ${fmtNumber(min)} ${m.unit}` : ""
             }`,
         color: !hasDemand
           ? ACCENT
@@ -183,7 +185,7 @@ export function MainTab() {
             : null,
       };
     });
-  }, [consumables, consumableDemand]);
+  }, [materials, materialDemand]);
 
   const stats = useMemo(() => {
     let lowStock = 0;
@@ -234,35 +236,11 @@ export function MainTab() {
       />
 
       <DashboardSection
-        title="Материалы (себестоимость)"
+        title="Материалы (склад + прогноз очереди)"
         empty="Материалов пока нет — добавьте в Настройки → Материалы."
         rows={materials.length}
       >
-        <BarChart
-          rows={materials.map((m) => {
-            const min = Number(m.minStock) || 0;
-            const s = statusOf(m);
-            return {
-              key: m.id,
-              label: m.name,
-              value: m.stock,
-              max: Math.max(m.stock, min, 1),
-              meta: `${fmtNumber(m.stock)} ${m.unit}${
-                min > 0 ? ` / мин ${fmtNumber(min)} ${m.unit}` : ""
-              }`,
-              color: colorFor(s),
-              marker: min > 0 ? min : null,
-            };
-          })}
-        />
-      </DashboardSection>
-
-      <DashboardSection
-        title="Расходники (прогноз по очереди)"
-        empty="Расходников нет в справочнике — Настройки → Расходники. Синие полосы: учёт всей очереди «На производство» и норм в карточке изделия."
-        rows={consumables.length}
-      >
-        <BarChart rows={consumableRows} />
+        <BarChart rows={materialRows} />
       </DashboardSection>
 
       <DashboardSection
@@ -279,11 +257,11 @@ export function MainTab() {
             meta:
               `${fmtNumber(g.qty, 0)} шт` +
               (g.consumableShortage
-                ? " · НЕХВАТАЕТ расходников"
+                ? " · НЕХВАТАЕТ материалов"
                 : g.consumableWarnSoon
                   ? " · после очереди мало ✎"
                   : g.hasConsumablePlan
-                    ? " · расходники"
+                    ? " · есть нормы BOM"
                     : ""),
             color: g.consumableShortage
               ? "#38bdf8"
@@ -376,12 +354,9 @@ interface ReceiveLine {
 function ReceiveModalContent({ onClose }: { onClose: () => void }) {
   const catalogHidden = useStore((s) => s.catalogHidden);
   const catalogBoms = useStore((s) => s.catalogBoms);
-  const catalogConsumableBoms = useStore((s) => s.catalogConsumableBoms);
   const materials = useStore((s) => s.materials);
-  const consumables = useStore((s) => s.consumables);
   const addCatalogStock = useStore((s) => s.addCatalogStock);
   const updateMaterial = useStore((s) => s.updateMaterial);
-  const updateConsumable = useStore((s) => s.updateConsumable);
 
   const [items, setItems] = useState<CatalogItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -448,7 +423,6 @@ function ReceiveModalContent({ onClose }: { onClose: () => void }) {
   const submit = () => {
     if (!canSave) return;
     const matDelta = new Map<string, number>();
-    const consDelta = new Map<string, number>();
     for (const [key, q] of valid) {
       addCatalogStock(key, q);
       const bom = catalogBoms?.[key];
@@ -460,25 +434,11 @@ function ReceiveModalContent({ onClose }: { onClose: () => void }) {
           matDelta.set(matId, (matDelta.get(matId) ?? 0) + per * q);
         }
       }
-      const cBom = catalogConsumableBoms?.[key];
-      if (Array.isArray(cBom)) {
-        for (const line of cBom) {
-          const cid = line?.consumableId;
-          const per = Number(line?.qtyPerUnit);
-          if (!cid || !Number.isFinite(per) || per <= 0) continue;
-          consDelta.set(cid, (consDelta.get(cid) ?? 0) + per * q);
-        }
-      }
     }
     for (const [matId, used] of matDelta) {
       const m = materials.find((mm) => mm.id === matId);
       if (!m) continue;
       updateMaterial(matId, { stock: (Number(m.stock) || 0) - used });
-    }
-    for (const [cid, used] of consDelta) {
-      const c = consumables.find((cc) => cc.id === cid);
-      if (!c) continue;
-      updateConsumable(cid, { stock: (Number(c.stock) || 0) - used });
     }
     onClose();
   };

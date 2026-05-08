@@ -3,10 +3,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ProductionItem } from "@/lib/server/store";
 import { lineUrgentQty } from "@/lib/urgentDisplay";
-import type { Consumable, ConsumableBomLine } from "@/lib/types";
 import {
-  buildConsumableLinesForGroup,
-  type ConsumableDisplayLine,
+  buildQueueMaterialLinesForGroup,
+  totalQueueMaterialDemand,
+  type QueueMaterialLine,
 } from "@/lib/consumablePlan";
 import { useStore } from "@/lib/store";
 import { Empty, Input, Segmented } from "./ui";
@@ -71,7 +71,7 @@ interface Group {
   urgentQty: number;
   ids: string[];
   sizes: SizeBucket[];
-  consumablePlan: ConsumableDisplayLine[];
+  consumablePlan: QueueMaterialLine[];
   consumableShortage: boolean;
 }
 
@@ -120,22 +120,22 @@ function groupItems(items: ProductionItem[]): Group[] {
   return Array.from(map.values());
 }
 
-function attachConsumablePlans(
+function attachQueueMaterialPlans(
   groups: Group[],
   items: ProductionItem[],
-  catalogConsumableBoms: Record<string, ConsumableBomLine[]>,
-  consumables: Consumable[]
+  catalogBoms: Record<string, import("@/lib/types").BomLine[]>,
+  materials: import("@/lib/types").Material[]
 ): Group[] {
   const byId = new Map(items.map((i) => [i.id, i]));
   return groups.map((g) => {
     const subset = g.ids
       .map((id) => byId.get(id))
       .filter((i): i is ProductionItem => !!i);
-    const plan = buildConsumableLinesForGroup(
+    const plan = buildQueueMaterialLinesForGroup(
       subset,
       items,
-      catalogConsumableBoms,
-      consumables
+      catalogBoms,
+      materials
     );
     return {
       ...g,
@@ -172,8 +172,8 @@ function sortGroups(groups: Group[], sort: Sort): Group[] {
 }
 
 export function ProductionTab() {
-  const catalogConsumableBoms = useStore((s) => s.catalogConsumableBoms);
-  const consumables = useStore((s) => s.consumables);
+  const catalogBoms = useStore((s) => s.catalogBoms);
+  const materials = useStore((s) => s.materials);
   const [data, setData] = useState<ApiState>({ items: [], lastPostAt: null });
   const [mode, setMode] = useState<Mode>("grid");
   const [sort, setSort] = useState<Sort>("qty");
@@ -209,13 +209,13 @@ export function ProductionTab() {
 
   const allGroups = useMemo(
     () =>
-      attachConsumablePlans(
+      attachQueueMaterialPlans(
         groupItems(data.items),
         data.items,
-        catalogConsumableBoms,
-        consumables
+        catalogBoms,
+        materials
       ),
-    [data.items, catalogConsumableBoms, consumables]
+    [data.items, catalogBoms, materials]
   );
   const totalUnits = useMemo(
     () => data.items.reduce((s, i) => s + i.qty, 0),
@@ -316,17 +316,17 @@ export function ProductionTab() {
 
       <details className="mt-2 text-[10px] uppercase tracking-[0.14em] text-[var(--color-muted)]">
         <summary className="cursor-pointer text-sky-400/90 hover:text-sky-300 transition-colors">
-          Как работают расходники
+          Как работают материалы в очереди
         </summary>
         <div className="mt-3 normal-case tracking-normal text-[var(--color-foreground)]/85 space-y-2 leading-relaxed max-w-2xl">
           <p>
-            В настройках заведите позиции в разделе «Расходники» и укажите остатки
+            В настройках заведите позиции в разделе «Материалы» и укажите остатки
             на складе. Для каждого изделия в «Изделия» → карточка товара задайте
-            норму: сколько расходника уходит на одну штуку изделия.
+            норму BOM: сколько материала уходит на одну штуку изделия.
           </p>
           <p>
             Очередь «На производство» суммируется по всем карточкам: остаток после
-            очереди для каждого расходника считается как склад минус потребность
+            очереди для каждого материала считается как склад минус потребность
             по <strong className="font-medium">всей</strong> очереди сразу (только
             отображение, склад на сервере не меняется).
           </p>
@@ -336,15 +336,14 @@ export function ProductionTab() {
             текущей очереди.
           </p>
           <p>
-            Синяя рамка — заданы нормы расходников. «НЕХВАТАЕТ» — после всей
+            Синяя рамка — заданы нормы материалов. «НЕХВАТАЕТ» — после всей
             очереди не хватило бы склада. Иконка карандаша — остаток после очереди
-            ещё есть, но мало (минимум из карточки расходника или ≤15% от текущего
+            ещё есть, но мало (минимум из карточки материала или ≤15% от текущего
             склада).
           </p>
           <p>
-            При «Оприходовать товар» на главной расходники списываются так же,
-            как материалы по BOM себестоимости — пропорционально количеству
-            принятой продукции.
+            При «Оприходовать товар» на главной материалы списываются
+            пропорционально количеству принятой продукции по тем же BOM-нормам.
           </p>
         </div>
       </details>
@@ -376,7 +375,7 @@ function ConsumablePlanPanel({
   plan,
   urgent,
 }: {
-  plan: ConsumableDisplayLine[];
+  plan: QueueMaterialLine[];
   urgent: boolean;
 }) {
   if (!plan.length) return null;
@@ -407,7 +406,7 @@ function ConsumablePlanPanel({
       <ul className="space-y-1.5">
         {plan.map((row) => (
           <li
-            key={row.consumableId}
+            key={row.materialId}
             className={
               "text-[10px] leading-snug font-light tracking-wide normal-case " +
               (row.shortage > 0 ? "text-sky-200" : "text-sky-100/90")

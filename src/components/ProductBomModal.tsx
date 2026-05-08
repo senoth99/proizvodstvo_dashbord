@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useStore } from "@/lib/store";
-import type { BomLine, ConsumableBomLine } from "@/lib/types";
+import type { BomLine } from "@/lib/types";
 import { fmtMoney, fmtNumber } from "@/lib/format";
 import { Button, Field, Input, Modal, Select } from "./ui";
 
@@ -33,9 +33,7 @@ function ProductBomModalContent({
   imageUrl,
 }: Props) {
   const materials = useStore((s) => s.materials);
-  const consumables = useStore((s) => s.consumables);
   const setCatalogBom = useStore((s) => s.setCatalogBom);
-  const setCatalogConsumableBom = useStore((s) => s.setCatalogConsumableBom);
   const setCatalogManualCost = useStore((s) => s.setCatalogManualCost);
   const setCatalogHidden = useStore((s) => s.setCatalogHidden);
   const isHidden = useStore((s) =>
@@ -45,13 +43,6 @@ function ProductBomModalContent({
   const [lines, setLines] = useState<BomLine[]>(() => {
     if (!bomKey) return [];
     const all = useStore.getState().catalogBoms ?? {};
-    const stored = all[bomKey];
-    return Array.isArray(stored) ? stored : [];
-  });
-
-  const [consLines, setConsLines] = useState<ConsumableBomLine[]>(() => {
-    if (!bomKey) return [];
-    const all = useStore.getState().catalogConsumableBoms ?? {};
     const stored = all[bomKey];
     return Array.isArray(stored) ? stored : [];
   });
@@ -88,21 +79,6 @@ function ProductBomModalContent({
   const removeLine = (idx: number) =>
     setLines((arr) => arr.filter((_, i) => i !== idx));
 
-  const addConsLine = () => {
-    if (!consumables.length) return;
-    const used = new Set(consLines.map((l) => l.consumableId));
-    const next = consumables.find((c) => !used.has(c.id)) ?? consumables[0];
-    setConsLines((arr) => [...arr, { consumableId: next.id, qtyPerUnit: 0 }]);
-  };
-
-  const updateConsLine = (idx: number, patch: Partial<ConsumableBomLine>) =>
-    setConsLines((arr) =>
-      arr.map((l, i) => (i === idx ? { ...l, ...patch } : l))
-    );
-
-  const removeConsLine = (idx: number) =>
-    setConsLines((arr) => arr.filter((_, i) => i !== idx));
-
   const save = () => {
     if (!bomKey) return;
     const valid = lines.filter(
@@ -118,27 +94,15 @@ function ProductBomModalContent({
     } else {
       setCatalogManualCost(bomKey, null);
     }
-    const validCons = consLines.filter(
-      (l) =>
-        l.consumableId &&
-        Number.isFinite(l.qtyPerUnit) &&
-        l.qtyPerUnit > 0
-    );
-    setCatalogConsumableBom(bomKey, validCons);
     onClose();
   };
 
   const clear = () => {
     if (!bomKey) return;
-    if (!lines.length && !manualCost && !consLines.length) return;
-    if (
-      !confirm(
-        "Удалить материалы, расходники и ручную себестоимость для этого изделия?"
-      )
-    )
+    if (!lines.length && !manualCost) return;
+    if (!confirm("Удалить спецификацию и ручную себестоимость для этого изделия?"))
       return;
     setLines([]);
-    setConsLines([]);
     setManualCost("");
   };
 
@@ -147,8 +111,7 @@ function ProductBomModalContent({
     setCatalogHidden(bomKey, !isHidden);
   };
 
-  const hasAnythingToClear =
-    lines.length > 0 || !!manualCost || consLines.length > 0;
+  const hasAnythingToClear = lines.length > 0 || !!manualCost;
 
   return (
     <Modal
@@ -222,6 +185,12 @@ function ProductBomModalContent({
         </div>
       </div>
 
+      <p className="text-[10px] text-[var(--color-muted)] normal-case tracking-normal leading-relaxed mb-3">
+        Нормы на 1 шт. считаются и для{" "}
+        <strong className="font-medium opacity-90">себестоимости</strong>, и для{" "}
+        <strong className="font-medium opacity-90">прогноза очереди</strong> на производстве (синие статусы на главной и вкладке «На производство»).
+      </p>
+
       <div className="flex flex-col gap-3">
         {lines.map((line, idx) => {
           const m = materials.find((mm) => mm.id === line.materialId);
@@ -230,20 +199,20 @@ function ProductBomModalContent({
               key={idx}
               className="grid grid-cols-[1fr_140px_36px] gap-2 items-end"
             >
-                <Field label="Материал">
-                  <Select
-                    value={line.materialId}
-                    onChange={(e) =>
-                      updateLine(idx, { materialId: e.target.value })
-                    }
-                  >
-                    {materials.map((mm) => (
-                      <option key={mm.id} value={mm.id}>
-                        {mm.name.toUpperCase()} ({mm.unit})
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
+              <Field label="Материал">
+                <Select
+                  value={line.materialId}
+                  onChange={(e) =>
+                    updateLine(idx, { materialId: e.target.value })
+                  }
+                >
+                  {materials.map((mm) => (
+                    <option key={mm.id} value={mm.id}>
+                      {mm.name.toUpperCase()} ({mm.unit})
+                    </option>
+                  ))}
+                </Select>
+              </Field>
               <Field label={`Расход (${m?.unit ?? ""})`}>
                 <Input
                   type="number"
@@ -277,8 +246,7 @@ function ProductBomModalContent({
             </Button>
           ) : (
             <span className="text-[10px] uppercase tracking-[0.18em] text-[var(--color-muted)]">
-              Чтобы считать из материалов — добавьте их в разделе
-              «Материалы»
+              Добавьте материалы в разделе «Материалы» в настройках
             </span>
           )}
           {lines.length > 0 && (
@@ -287,73 +255,6 @@ function ProductBomModalContent({
               <strong className="text-[var(--color-foreground)] tabular-nums">
                 {fmtNumber(lines.length, 0)}
               </strong>
-            </span>
-          )}
-        </div>
-      </div>
-
-      <div className="mt-6 pt-4 border-t border-[var(--color-line)]/40 flex flex-col gap-3">
-        <div className="text-[10px] text-[var(--color-muted)] uppercase tracking-[0.18em]">
-          Расходники на 1 шт. изделия
-        </div>
-        <p className="text-[10px] text-[var(--color-muted)] uppercase tracking-[0.14em] leading-relaxed">
-          Укажите расход по каждому расходнику. На вкладке «На производство»
-          будет показан суммарный расход по очереди и остаток на складе.
-        </p>
-        {consLines.map((line, idx) => {
-          const c = consumables.find((cc) => cc.id === line.consumableId);
-          return (
-            <div
-              key={idx}
-              className="grid grid-cols-[1fr_140px_36px] gap-2 items-end"
-            >
-              <Field label="Расходник">
-                <Select
-                  value={line.consumableId}
-                  onChange={(e) =>
-                    updateConsLine(idx, { consumableId: e.target.value })
-                  }
-                >
-                  {consumables.map((cc) => (
-                    <option key={cc.id} value={cc.id}>
-                      {cc.name.toUpperCase()} ({cc.unit})
-                    </option>
-                  ))}
-                </Select>
-              </Field>
-              <Field label={`Расход (${c?.unit ?? ""})`}>
-                <Input
-                  type="number"
-                  step="any"
-                  inputMode="decimal"
-                  className="text-right"
-                  value={line.qtyPerUnit}
-                  onChange={(e) =>
-                    updateConsLine(idx, {
-                      qtyPerUnit: Number(e.target.value) || 0,
-                    })
-                  }
-                />
-              </Field>
-              <button
-                type="button"
-                onClick={() => removeConsLine(idx)}
-                aria-label="Удалить строку"
-                className="h-10 w-9 inline-flex items-center justify-center text-[var(--color-muted)] hover:text-[var(--color-foreground)] hover:bg-[var(--color-surface)]"
-              >
-                ✕
-              </button>
-            </div>
-          );
-        })}
-        <div className="flex items-center justify-between pt-1">
-          {consumables.length > 0 ? (
-            <Button size="sm" onClick={addConsLine}>
-              + Расходник
-            </Button>
-          ) : (
-            <span className="text-[10px] uppercase tracking-[0.18em] text-[var(--color-muted)]">
-              Добавьте расходники в настройках (раздел «Расходники»)
             </span>
           )}
         </div>
