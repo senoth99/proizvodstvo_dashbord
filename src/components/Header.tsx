@@ -34,13 +34,15 @@ export function Header({ view, setView }: Props) {
               onClick={() => setView("manager")}
               aria-current={view === "manager" ? "page" : undefined}
               className={
-                "h-9 px-3 text-[10px] sm:text-[11px] font-light uppercase tracking-[0.18em] transition-colors " +
+                "h-9 px-3 text-[8px] sm:text-[9px] font-light uppercase tracking-[0.12em] transition-colors " +
                 (view === "manager"
                   ? "bg-[var(--color-accent)] text-[var(--color-foreground)]"
                   : "bg-[var(--color-surface)] text-[var(--color-muted)] hover:text-[var(--color-foreground)]")
               }
             >
-              Панель манагера
+              <span className="inline-block origin-center scale-[0.42] leading-none">
+                Панель манагера
+              </span>
             </button>
           </div>
         </div>
@@ -59,13 +61,13 @@ export function Header({ view, setView }: Props) {
               onClick={() => setView(t.id)}
               aria-current={active ? "page" : undefined}
               className={
-                "h-14 w-full px-2 inline-flex items-center justify-center text-center text-[11px] sm:text-[13px] font-light uppercase tracking-[0.22em] transition-colors " +
+                "h-14 w-full px-2 inline-flex items-center justify-center text-center text-[6px] sm:text-[7px] font-light uppercase tracking-[0.22em] transition-colors " +
                 (active
                   ? "bg-[var(--color-accent)] text-[var(--color-foreground)]"
                   : "bg-[var(--color-surface)] text-[var(--color-muted)] hover:text-[var(--color-foreground)]")
               }
             >
-              {t.label}
+              <span className="origin-center scale-[0.55]">{t.label}</span>
             </button>
           );
         })}

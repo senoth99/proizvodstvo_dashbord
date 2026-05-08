@@ -525,8 +525,8 @@ function ReceiveModalContent({ onClose }: { onClose: () => void }) {
             </>
           )}
 
-          <div className="mt-2 px-3 py-2 bg-[#d4a017] text-[var(--color-foreground)] text-[11px] uppercase tracking-[0.18em] font-light text-center">
-            Удостоверьтесь, что товар в надлежащем качестве и без брака
+          <div className="mt-2 px-3 py-2 bg-[#d4a017] text-[var(--color-foreground)] text-[12px] uppercase tracking-[0.22em] font-medium text-center">
+            при оприходовании сразу спишутся расходники
           </div>
         </div>
       </Modal>

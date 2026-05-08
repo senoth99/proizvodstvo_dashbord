@@ -20,9 +20,9 @@ const buttonClasses = (
     "transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-[var(--color-accent)] " +
     "disabled:opacity-50 disabled:pointer-events-none whitespace-nowrap";
   const sizes: Record<string, string> = {
-    sm: "h-9 px-3 text-[13px]",
-    md: "h-11 px-5 text-[15px]",
-    lg: "h-16 px-6 text-[17px]",
+    sm: "h-9 px-3 text-[7px]",
+    md: "h-11 px-5 text-[8px]",
+    lg: "h-16 px-6 text-[9px]",
   };
   const variants: Record<ButtonVariant, string> = {
     primary:
@@ -47,13 +47,18 @@ export function Button({
   size = "md",
   block,
   className = "",
+  children,
   ...rest
 }: ButtonProps) {
   return (
     <button
       {...rest}
       className={`${buttonClasses(variant, size, block)} ${className}`}
-    />
+    >
+      <span className="inline-flex items-center gap-2 origin-center scale-[0.55]">
+        {children}
+      </span>
+    </button>
   );
 }
 
@@ -276,13 +281,13 @@ export function Segmented<T extends string>({
             type="button"
             onClick={() => onChange(o.value)}
             className={
-              "h-10 px-5 inline-flex items-center gap-2 text-[13px] uppercase tracking-[0.22em] font-light transition-colors " +
+              "h-10 px-5 inline-flex items-center gap-2 text-[7px] uppercase tracking-[0.22em] font-light transition-colors " +
               (active
                 ? "bg-[var(--color-accent)] text-[var(--color-foreground)]"
                 : "text-[var(--color-muted)] hover:text-[var(--color-foreground)]")
             }
           >
-            <span>{o.label}</span>
+            <span className="origin-center scale-[0.55]">{o.label}</span>
           </button>
         );
       })}
