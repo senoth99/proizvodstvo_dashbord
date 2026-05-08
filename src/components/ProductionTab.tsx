@@ -460,8 +460,7 @@ function GridView({ groups }: { groups: Group[] }) {
           key={g.key}
           className={
             "overflow-hidden flex flex-col " +
-            (g.urgentQty > 0 ? "bg-[#d11a1a]" : "bg-[var(--color-surface)]") +
-            (g.consumablePlan.length > 0 ? " ring-2 ring-sky-500/65" : "")
+            (g.urgentQty > 0 ? "bg-[#d11a1a]" : "bg-[var(--color-surface)]")
           }
         >
           <div className="relative aspect-square bg-black/40">
@@ -519,8 +518,7 @@ function ListView({ groups }: { groups: Group[] }) {
           key={g.key}
           className={
             "flex flex-col sm:flex-row sm:items-center gap-3 py-3 first:pt-0 " +
-            (g.urgentQty > 0 ? "bg-[#d11a1a]/20 px-2 -mx-2" : "") +
-            (g.consumablePlan.length > 0 ? " ring-2 ring-sky-500/50 sm:ring-inset" : "")
+            (g.urgentQty > 0 ? "bg-[#d11a1a]/20 px-2 -mx-2" : "")
           }
         >
           <div className="flex-1 min-w-0">
