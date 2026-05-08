@@ -35,14 +35,16 @@ export function SettingsTab() {
                 type="button"
                 onClick={() => setSection(s.id)}
                 className={
-                  "h-10 px-3 sm:px-4 text-xs uppercase tracking-[0.16em] font-semibold transition-colors " +
+                  "h-10 px-3 sm:px-4 text-[8px] uppercase tracking-[0.16em] font-semibold transition-colors " +
                   (active
                     ? "bg-[var(--color-accent)] text-[var(--color-accent-foreground)]"
                     : "text-[var(--color-muted)] hover:text-[var(--color-foreground)] hover:bg-white/[0.04]")
                 }
                 title={s.hint}
               >
-                {s.label}
+                <span className="inline-block origin-center scale-[0.55] leading-none">
+                  {s.label}
+                </span>
               </button>
             );
           })}
